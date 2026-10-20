@@ -69,6 +69,7 @@ body.present-page { background: #0b0e15; overflow: hidden; min-height: 100vh; }
 .rounds li .w.jev { color: var(--accent-2); }
 .rounds li .w.haiku { color: #f4a340; }
 .rounds li .w.gemini { color: #7fb0ff; }
+.rounds li .w.gpt { color: #d2a1f5; }
 .rounds li .w.laya { color: #f5d547; }
 .rounds li .w.draw { color: var(--muted); }
 .rounds li .t, .rounds li .l { text-align: right; color: var(--muted); }
@@ -77,10 +78,10 @@ body.present-page { background: #0b0e15; overflow: hidden; min-height: 100vh; }
 /* Setup overlay: shown before a series and again after N. */
 .setup {
   position: fixed; inset: 0; z-index: 10;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   background: rgba(6, 8, 12, 0.84); padding: 20px; overflow: auto;
 }
-.setup .card { width: 460px; max-width: 100%; }
+.setup .card { width: 460px; max-width: 100%; margin: auto 0; flex-shrink: 0; }
 .setup .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; margin-top: 6px; }
 .setup .field input[type="text"] {
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text);

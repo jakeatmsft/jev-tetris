@@ -1,7 +1,7 @@
 {
   "name": "jev-tetris",
   "version": "1.0.0",
-  "description": "Demo: TypeSafe's Jev model plays Tetris. Code enumerates placements, Jev picks one.",
+  "description": "Microsoft Foundry Decision-1 plays Tetris with Entra ID authentication.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -12,5 +12,10 @@
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@azure/identity": "^4.14.0",
+    "dotenv": "^18.0.8",
+    "openai": "^7.39.0"
+  }
 }

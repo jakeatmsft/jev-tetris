@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jev vs … · presentation</title>
-  <meta name="description" content="Recording layout for a best-of-N Tetris series between Jev and another model: big boards, a series score, nothing else on screen." />
+  <title>Model vs model Tetris · presentation</title>
+  <meta name="description" content="Recording layout for a best-of-N Tetris series between two models you choose: big boards, a series score, nothing else on screen." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='1' width='6' height='14' fill='%233fd6f0'/><rect x='9' y='1' width='6' height='14' fill='%23f4a340'/></svg>" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="battle.css" />
@@ -15,14 +15,15 @@
     <section class="player" id="left">
       <div class="panel">
         <div class="player-head">
-          <span class="badge jev">Jev</span>
-          <span class="model muted">TypeSafe</span>
+          <span class="badge jev" id="badgeL">Decision-1</span>
+          <span class="model muted" id="modelL">Microsoft Foundry</span>
+          <a class="model-price hidden" id="priceL" target="_blank" rel="noreferrer" title="Published base USD rate; displayed costs are estimates."></a>
         </div>
         <div class="incoming" id="incomingL"></div>
         <div class="pstats" id="statsL"></div>
       </div>
       <div class="board-wrap">
-        <canvas class="board" id="boardL" width="400" height="800" aria-label="Jev's board"></canvas>
+        <canvas class="board" id="boardL" width="400" height="800" aria-label="Decision-1's board"></canvas>
         <div class="overlay hidden" id="overlayL"></div>
       </div>
     </section>
@@ -30,7 +31,7 @@
     <section class="center">
       <div class="series-title" id="seriesTitle">Real-time Tetris</div>
       <div class="score"><span id="scoreL">0</span><span class="sep">:</span><span id="scoreR">0</span></div>
-      <div class="score-names"><span id="nameL">Jev</span><span></span><span id="nameR">…</span></div>
+      <div class="score-names"><span id="nameL">Decision-1</span><span></span><span id="nameR">…</span></div>
       <div class="round-label" id="roundLabel">Best of 5</div>
       <div class="clock" id="clock">0:00</div>
       <div class="level muted" id="level"></div>
@@ -48,8 +49,9 @@
       </div>
       <div class="panel">
         <div class="player-head">
-          <span class="badge haiku" id="badgeR">Claude Haiku 4.5</span>
-          <span class="model muted" id="modelR">Anthropic</span>
+          <span class="badge gpt" id="badgeR">Foundry GPT</span>
+          <span class="model muted" id="modelR">Microsoft Foundry</span>
+          <a class="model-price hidden" id="priceR" target="_blank" rel="noreferrer" title="Published base USD rate; displayed costs are estimates."></a>
         </div>
         <div class="incoming" id="incomingR"></div>
         <div class="pstats" id="statsR"></div>
@@ -60,18 +62,17 @@
   <div class="setup" id="setup">
     <div class="card">
       <h2>Series setup</h2>
-      <label class="field">Opponent
-        <select id="opponent">
-          <option value="haiku" selected>Claude Haiku 4.5 (Anthropic)</option>
-          <option value="gemini">Gemini 3.8 Flash (Google)</option>
-          <option value="laya">Laya (local, open weights)</option>
-        </select>
+      <label class="field">Left player
+        <select id="playerL"><option value="decision">Decision-1 (Foundry)</option></select>
       </label>
-      <label class="field">TypeSafe key for Jev <input id="jevKey" type="password" placeholder="apikey_…" autocomplete="off" spellcheck="false" /></label>
-      <label class="field" id="haikuKeyField">Anthropic key <input id="haikuKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" /></label>
+      <label class="field">Right player
+        <select id="playerR"><option value="openai">OpenAI Decisions (gpt-6-luna)</option></select>
+      </label>
+      <p class="connection-status" data-connection-status role="status">Loading Foundry settings…</p>
+      <label class="field hidden" id="haikuKeyField">Anthropic key <input id="haikuKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" /></label>
       <label class="field hidden" id="geminiKeyField">Gemini key <input id="geminiKey" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false" /></label>
       <label class="field hidden" id="layaField">Laya server <input id="layaEndpoint" type="text" value="http://localhost:8765" autocomplete="off" spellcheck="false" /></label>
-      <label class="remember"><input id="remember" type="checkbox" /> Remember keys in this browser</label>
+      <label class="remember"><input id="remember" type="checkbox" /> Remember optional provider keys</label>
       <div class="row">
         <label class="field">Rounds (best of) <input id="roundsInput" type="number" min="1" max="99" value="5" /></label>
         <label class="field">Pause between rounds (s) <input id="hold" type="number" min="0" max="120" value="8" /></label>

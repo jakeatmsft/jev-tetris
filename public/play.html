@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Play against Jev</title>
-  <meta name="description" content="Play real-time Tetris against Jev. Your cleared lines land on its board and vice versa; first to top out loses." />
+  <title>Play against Decision-1</title>
+  <meta name="description" content="Play real-time Tetris against Decision-1. Your cleared lines land on its board and vice versa; first to top out loses." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='1' width='6' height='14' fill='%235fe38a'/><rect x='9' y='1' width='6' height='14' fill='%233fd6f0'/></svg>" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="battle.css" />
@@ -12,12 +12,12 @@
 <body>
   <header class="top">
     <div>
-      <h1>Play against Jev</h1>
+      <h1>Play against Decision-1</h1>
       <p class="sub">
-        You on the left, Jev on the right, the same pieces for both. Every line you clear lands on
-        Jev's board as a garbage row, and every line Jev clears lands on yours. Gravity gets stronger
+        You on the left, Decision-1 on the right, the same pieces for both. Every line you clear lands on
+        Decision-1's board as a garbage row, and every line Decision-1 clears lands on yours. Gravity gets stronger
         as the minutes pass. Whoever tops out first loses.
-        <a href="./">Watch Jev vs Claude Haiku instead</a>
+        <a href="./">Watch the model battle</a>
       </p>
     </div>
   </header>
@@ -45,7 +45,7 @@
     </section>
 
     <section class="center">
-      <div class="present-title">Human vs Jev</div>
+      <div class="present-title">Human vs Decision-1</div>
       <div class="vs">VS</div>
       <div class="clock" id="clock">0:00</div>
       <div class="level muted" id="level"></div>
@@ -57,10 +57,9 @@
       <div id="result" class="result hidden"></div>
       <div id="error" class="error hidden" role="alert"></div>
       <div class="card" id="setup-card">
-        <h2>Jev's key</h2>
-        <label class="field">TypeSafe key <input id="jevKey" type="password" placeholder="apikey_…" autocomplete="off" spellcheck="false" /></label>
-        <label class="remember"><input id="remember" type="checkbox" /> Remember in this browser</label>
-        <p class="hint">Jev needs your TypeSafe key. It goes from this page to the proxy in <code>server.mjs</code>, which forwards it and stores nothing.</p>
+        <h2>Microsoft Foundry</h2>
+        <p class="connection-status" data-connection-status role="status">Loading Foundry settings…</p>
+        <p class="hint">Decision-1 uses your server’s Microsoft Entra ID sign-in. Press Start to play.</p>
       </div>
       <div class="card" id="controls-card">
         <h2>Controls</h2>
@@ -86,17 +85,18 @@
         <label class="field">Seed <input id="seed" type="number" value="42" /></label>
         <label class="field">Time limit (min) <input id="limit" type="number" min="1" max="30" value="5" /></label>
         <label class="field check"><input id="garbage" type="checkbox" checked /> Versus: cleared lines attack the opponent</label>
-        <label class="field check"><input id="jevGravity" type="checkbox" checked /> Jev's pieces fall too (untick to let Jev think freely)</label>
+        <label class="field check"><input id="jevGravity" type="checkbox" checked /> Decision-1's pieces fall too (untick to let Decision-1 think freely)</label>
       </div>
     </section>
 
     <section class="player" id="right">
       <div class="player-head">
-        <span class="badge jev">Jev</span>
-        <span class="model muted">jev-latest · TypeSafe</span>
+        <span class="badge jev" data-decision-model>Decision-1</span>
+        <span class="model muted">Microsoft Foundry · Entra ID</span>
+        <a class="model-price" href="https://commandline.microsoft.com/microsoft-decision-1-model-foundry/" target="_blank" rel="noreferrer" title="Published base USD rate; displayed costs are estimates.">$0.042 / 1M input tokens · Output tokens free</a>
       </div>
       <div class="board-wrap">
-        <canvas class="board" id="boardR" width="240" height="480" aria-label="Jev's board"></canvas>
+        <canvas class="board" id="boardR" width="240" height="480" aria-label="Decision-1's board"></canvas>
         <div class="overlay hidden" id="overlayR"></div>
       </div>
       <div class="incoming" id="incomingR"></div>
@@ -106,8 +106,7 @@
   </main>
 
   <footer class="foot">
-    Jev sees the same described placement list it gets in the model battle and answers in about a
-    quarter of a second. You get a ghost piece and a short lock delay. Good luck.
+    Decision-1 chooses from the same legal placements as in the model battle. You get a ghost piece and a short lock delay. Good luck.
   </footer>
 
   <script type="module" src="play.js"></script>

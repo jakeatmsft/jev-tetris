@@ -13,6 +13,7 @@
 .badge.gemini { background: rgba(76, 139, 245, 0.15); color: #7fb0ff; border: 1px solid rgba(76, 139, 245, 0.45); }
 .badge.haiku { background: rgba(244, 163, 64, 0.15); color: #f4a340; border: 1px solid rgba(244, 163, 64, 0.4); }
 .model { font-size: 12px; }
+.model-price { font-size: 11px; line-height: 1.4; text-align: center; max-width: 300px; }
 canvas.board {
   width: 240px;
   height: 480px;
@@ -108,3 +109,9 @@ body.present .error { font-size: 12px; }
 .touch button { flex: 1; padding: 10px 0; font-size: 18px; line-height: 1; touch-action: manipulation; user-select: none; }
 body.present #controls-card, body.present .touch { display: none; }
 @media (hover: hover) and (pointer: fine) { .touch { display: none; } }
+
+.badge.gpt { background: rgba(181, 101, 242, 0.15); color: #d2a1f5; border: 1px solid rgba(181, 101, 242, 0.4); }
+.connection-status { color: var(--good); font-size: 13px; line-height: 1.5; margin: 8px 0 12px; }
+.connection-error { color: var(--bad); }
+#rules-card summary { cursor: pointer; font-weight: 600; }
+#rules-card[open] summary { margin-bottom: 12px; }

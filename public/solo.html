@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jev plays Tetris (solo)</title>
-  <meta name="description" content="Demo: TypeSafe's Jev model chooses every Tetris move from placements the code enumerates." />
+  <title>Decision-1 plays Tetris (solo)</title>
+  <meta name="description" content="Demo: Foundry Decision-1 chooses every Tetris move from placements the code enumerates." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='1' width='6' height='6' fill='%233fd6f0'/><rect x='9' y='1' width='6' height='6' fill='%23f5d547'/><rect x='1' y='9' width='6' height='6' fill='%23b565f2'/><rect x='9' y='9' width='6' height='6' fill='%23f26b6b'/></svg>" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="top">
     <div>
-      <h1>Jev plays Tetris</h1>
+      <h1>Decision-1 plays Tetris</h1>
       <p class="sub">
         Code enumerates every legal placement and describes the outcome.
-        <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">Jev</a>, TypeSafe's System One model,
+        Decision-1 on Microsoft Foundry
         picks one with a single <code>choice</code> question per piece.
         <a href="./">Back to the battle</a>
       </p>
     </div>
     <div class="mode" role="radiogroup" aria-label="Who plays">
-      <label><input type="radio" name="mode" value="jev" checked /> Jev decides</label>
+      <label><input type="radio" name="mode" value="jev" checked /> Decision-1 decides</label>
       <label><input type="radio" name="mode" value="heuristic" /> Built-in heuristic (no key)</label>
     </div>
   </header>
@@ -32,7 +32,7 @@
         <div id="overlay" class="overlay hidden"></div>
       </div>
       <div class="status-row">
-        <span id="status" class="status">Enter your TypeSafe API key and press Start.</span>
+        <span id="status" class="status">Loading Foundry settings…</span>
       </div>
       <div class="controls">
         <button id="start" class="primary">Start</button>
@@ -44,18 +44,10 @@
 
     <section class="side-col">
       <div class="card" id="setup">
-        <h2>Your TypeSafe key</h2>
-        <div class="key-row">
-          <input id="apiKey" type="password" placeholder="ts-..." autocomplete="off" spellcheck="false" />
-          <button id="toggleKey" type="button" title="Show or hide">👁</button>
-          <button id="testKey" type="button">Test</button>
-        </div>
-        <label class="remember"><input id="remember" type="checkbox" /> Remember in this browser</label>
-        <p class="hint">
-          Get a key at <a href="https://console.typesafe.ai/settings/keys" target="_blank" rel="noopener">console.typesafe.ai</a>.
-          The key goes from this page to the small proxy in <code>server.mjs</code>, which forwards it to
-          <code>api.typesafe.ai</code> and stores nothing.
-        </p>
+        <h2>Microsoft Foundry</h2>
+        <p class="hint"><a href="https://commandline.microsoft.com/microsoft-decision-1-model-foundry/" target="_blank" rel="noreferrer">Decision-1: $0.042 USD per million input tokens. Output tokens are free.</a></p>
+        <p class="connection-status" data-connection-status role="status">Loading Foundry settings…</p>
+        <button id="testKey" type="button">Check connection</button>
         <div id="keyStatus" class="key-status"></div>
       </div>
 
@@ -65,7 +57,7 @@
         <div class="stat"><span class="label">Level</span><span id="level">1</span></div>
         <div class="stat"><span class="label">Pieces</span><span id="pieces">0</span></div>
         <div class="stat"><span class="label">Next</span><canvas id="next" width="80" height="50"></canvas></div>
-        <div class="stat"><span class="label">Jev calls</span><span id="calls">0</span></div>
+        <div class="stat"><span class="label">Decision-1 calls</span><span id="calls">0</span></div>
         <div class="stat"><span class="label">Avg latency</span><span id="latency">–</span></div>
         <div class="stat"><span class="label">Input tokens</span><span id="tokens">0</span></div>
         <div class="stat"><span class="label">Est. cost</span><span id="cost">$0.0000</span></div>
@@ -73,14 +65,14 @@
       </div>
 
       <div class="card" id="decision">
-        <h2 id="decisionTitle">Jev's move</h2>
+        <h2 id="decisionTitle">Decision-1's move</h2>
         <p id="chosen" class="muted">No move yet.</p>
         <div class="bar-list" id="alternatives"></div>
       </div>
 
       <div class="card" id="reads">
-        <h2>Jev's read of the board</h2>
-        <p id="readsNote" class="muted hidden">Only filled in when Jev decides. The heuristic makes no model calls.</p>
+        <h2>Decision-1's read of the board</h2>
+        <p id="readsNote" class="muted hidden">Only filled in when Decision-1 decides. The heuristic makes no model calls.</p>
         <div class="read">
           <div class="read-label">Strategy</div>
           <div class="bar-list" id="strategy"></div>
@@ -115,8 +107,8 @@
   </main>
 
   <footer class="foot">
-    <a href="./">Battle: Jev vs Claude Haiku</a> ·
-    <a href="play.html">Play against Jev</a> ·
+    <a href="./">Battle: Decision-1 vs Claude Haiku</a> ·
+    <a href="play.html">Play against Decision-1</a> ·
     <a href="https://github.com/trungdq88/jev-tetris" target="_blank" rel="noopener">Source</a> ·
     <a href="https://docs.typesafe.ai/primitives/choice" target="_blank" rel="noopener">Choice primitive</a> ·
     <a href="https://docs.typesafe.ai/patterns/fan-out" target="_blank" rel="noopener">Speculative fan-out</a>

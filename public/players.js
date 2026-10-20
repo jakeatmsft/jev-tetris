@@ -4,8 +4,9 @@
 
 import { describePlacement, boardToText, describeHeight, describeHoles, describeSurface } from "./tetris.js";
 import { buildRequest, askJev, pickPlacement } from "./jev.js";
+import { foundry } from "./foundry.js";
+import { DECISION_PRICING, decisionCost } from "./pricing.js";
 
-export const JEV_PRICE = { input: 0.042 / 1e6, output: 0 };
 export const HAIKU_MODEL = "claude-haiku-4-5";
 export const HAIKU_PRICE = { input: 1 / 1e6, output: 5 / 1e6 }; // $1 / $5 per MTok
 
@@ -13,9 +14,9 @@ export const HAIKU_PRICE = { input: 1 / 1e6, output: 5 / 1e6 }; // $1 / $5 per M
 
 export function createJevPlayer(apiKey) {
   return {
-    name: "Jev",
-    short: "Jev",
-    model: "jev-latest",
+    name: "Decision-1",
+    short: "Decision-1",
+    model: foundry.model,
     async decide(gameInfo, placements, signal) {
       const request = buildRequest(gameInfo, placements);
       // The battle only needs the placement Choice; drop the extra questions.
@@ -28,7 +29,7 @@ export function createJevPlayer(apiKey) {
         latencyMs,
         inputTokens: usage.input_tokens || 0,
         outputTokens: usage.output_tokens || 0,
-        cost: (usage.input_tokens || 0) * JEV_PRICE.input,
+        cost: decisionCost(usage),
         note: `confidence ${confidence.toFixed(2)}`,
       };
     },
@@ -376,10 +377,125 @@ export function createLayaPlayer({ endpoint = LAYA_DEFAULT_ENDPOINT, candidates 
   };
 }
 
-// ---- Opponent table for the battle and presentation pages -------------------------------
+// ---- Player table: either model can occupy either side -------------------------------
 // `create(key)` takes the API key, or the server address for Laya.
-export const OPPONENTS = {
+export const PLAYERS = {
+  decision: { name: "Decision-1", short: "Decision-1", badge: "jev", label: "Microsoft Foundry · Entra ID", pricing: DECISION_PRICING, requiresKey: false, create: () => createJevPlayer() },
+  openai: { name: "OpenAI Decisions", short: "OpenAI", badge: "gpt", label: "gpt-6-luna · Decisions API", requiresKey: false, create: () => createOpenaiDecisionPlayer() },
+  gpt: { name: "Foundry GPT", short: "GPT", badge: "gpt", label: "Microsoft Foundry", requiresKey: false, create: () => createGptPlayer() },
+  heuristic: { name: "Built-in heuristic", short: "Heuristic", badge: "laya", label: "local · no model calls", requiresKey: false, create: () => createHeuristicPlayer() },
   haiku: { name: "Claude Haiku 4.5", short: "Haiku 4.5", badge: "haiku", label: `${HAIKU_MODEL} · Anthropic`, keyName: "Anthropic", create: (key) => createHaikuPlayer(key) },
   gemini: { name: "Gemini 3.8 Flash", short: "Gemini 3.8", badge: "gemini", label: `${GEMINI_MODEL} · Google`, keyName: "Gemini", create: (key) => createGeminiPlayer(key) },
   laya: { name: "Laya", short: "Laya", badge: "laya", label: "laya · local, open weights", keyName: "server address", create: (endpoint) => createLayaPlayer({ endpoint }) },
 };
+
+export function configureFoundryPlayers(config) {
+  PLAYERS.decision.name = config.model || "Decision-1";
+  PLAYERS.decision.short = config.model || "Decision-1";
+  PLAYERS.openai.label = `${config.openaiModel || "gpt-6-luna"} · Decisions API`;
+  PLAYERS.gpt.name = config.gptModel || "Foundry GPT";
+  PLAYERS.gpt.short = config.gptModel || "GPT";
+  PLAYERS.gpt.label = `${config.gptModel || "Not configured"} · Microsoft Foundry`;
+}
+
+export function buildOpenaiDecisionRequest(gameInfo, placements) {
+  const request = buildRequest(gameInfo, placements);
+  const question = request.questions.placement;
+  return {
+    input: JSON.stringify(request.state),
+    questions: [{
+      type: "choice",
+      name: "placement",
+      instructions: JSON.stringify(question.instructions),
+      choices: Object.entries(question.criteria).map(([value, description]) => ({ value, description: JSON.stringify(description) })),
+    }],
+  };
+}
+
+export function parseOpenaiDecisionChoice(response, placements) {
+  const answer = response?.answers?.find((item) => item.name === "placement");
+  if (answer?.type !== "choice") return null;
+  return placements.find((p) => p.id === answer.choice) || null;
+}
+
+export function createOpenaiDecisionPlayer() {
+  return {
+    name: "OpenAI Decisions", short: "OpenAI", model: foundry.openaiModel,
+    async decide(gameInfo, placements, signal) {
+      const { response, latencyMs } = await askJev(buildOpenaiDecisionRequest(gameInfo, placements), undefined, {
+        signal, maxAttempts: 2, endpoint: "api/openai-decision",
+      });
+      const chosen = parseOpenaiDecisionChoice(response, placements);
+      const answer = response.answers?.find((item) => item.name === "placement");
+      const inputTokens = response.usage?.input_tokens || 0;
+      return {
+        chosen, latencyMs, inputTokens, outputTokens: response.usage?.output_tokens || 0,
+        cost: foundry.openaiModel === "gpt-6-luna" ? inputTokens * 0.10 / 1e6 : NaN,
+        note: chosen ? `confidence ${(answer.confidence ?? 0).toFixed(2)}` : answer?.type === "refusal" ? "Decision refused" : "No valid placement returned",
+      };
+    },
+  };
+}
+
+export function buildGptRequest(gameInfo, placements) {
+  const tool = buildHaikuTool(placements);
+  return {
+    instructions: HAIKU_SYSTEM,
+    input: buildHaikuPrompt(gameInfo, placements),
+    tools: [{ type: "function", name: tool.name, description: tool.description, parameters: tool.input_schema, strict: true }],
+  };
+}
+
+export function parseGptChoice(response, placements) {
+  for (const item of response?.output || []) {
+    if (item.type !== "function_call" || item.name !== "place_piece") continue;
+    try {
+      const id = JSON.parse(item.arguments).option_id;
+      const chosen = placements.find((p) => p.id === id);
+      if (chosen) return chosen;
+    } catch { /* Malformed function arguments are an invalid decision. */ }
+  }
+  return null;
+}
+
+export function createGptPlayer() {
+  return {
+    name: foundry.gptModel || "Foundry GPT",
+    short: foundry.gptModel || "GPT",
+    model: foundry.gptModel,
+    async decide(gameInfo, placements, signal) {
+      const started = performance.now();
+      const response = await fetch("api/gpt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildGptRequest(gameInfo, placements)),
+        signal,
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        const error = new Error(body.detail?.message || body.error?.message || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      const chosen = parseGptChoice(body, placements);
+      return {
+        chosen,
+        latencyMs: performance.now() - started,
+        inputTokens: body.usage?.input_tokens || 0,
+        outputTokens: body.usage?.output_tokens || 0,
+        cost: NaN,
+        note: chosen ? `picked ${chosen.id}` : "No valid placement returned",
+      };
+    },
+  };
+}
+
+export function createHeuristicPlayer() {
+  return {
+    name: "Built-in heuristic", short: "Heuristic", model: "local",
+    async decide(gameInfo, placements) {
+      const chosen = placements.reduce((best, p) => !best || p.heuristic > best.heuristic ? p : best, null);
+      return { chosen, latencyMs: 0, inputTokens: 0, outputTokens: 0, cost: 0, note: "code heuristic" };
+    },
+  };
+}

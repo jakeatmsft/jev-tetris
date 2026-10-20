@@ -1,4 +1,4 @@
-// Real-time Tetris battle: Jev vs Claude Haiku on one seeded piece sequence
+// Real-time Tetris battle: two selected players on one seeded piece sequence
 // and one clock. Each side runs its own loop (see arena.js): the model is asked
 // when a piece spawns, gravity keeps pulling the piece down meanwhile, and a
 // piece that lands before the answer arrives locks where it is. Gravity
@@ -6,7 +6,8 @@
 // garbage for the opponent and the first to top out loses; with independent
 // boards the survivor must outlast the loser's piece count.
 
-import { OPPONENTS, createJevPlayer, checkLayaServer } from "./players.js";
+import { loadFoundryConfig, foundry } from "./foundry.js";
+import { createMatchupControls } from "./matchup.js";
 import {
   SPEEDUPS,
   PRESENT,
@@ -26,17 +27,9 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  jevKey: $("jevKey"),
   haikuKey: $("haikuKey"),
   geminiKey: $("geminiKey"),
-  haikuKeyField: $("haikuKeyField"),
-  geminiKeyField: $("geminiKeyField"),
-  layaField: $("layaField"),
-  layaNote: $("layaNote"),
   layaEndpoint: $("layaEndpoint"),
-  opponent: $("opponent"),
-  badgeR: $("badgeR"),
-  modelR: $("modelR"),
   remember: $("remember"),
   gravity: $("gravity"),
   gravityLabel: $("gravityLabel"),
@@ -67,6 +60,12 @@ function sideEls(id) {
 
 let sides = [];
 let battle = null; // { ramp, abort, timer, limitMs, lockstep, garbage }
+const matchup = createMatchupControls({ onChange: (players) => {
+  if (!battle) {
+    hideError();
+    sides.forEach((side, index) => { side.player = players[index]; });
+  }
+} });
 
 function gravityNow() {
   return battle ? battle.ramp.gravityNow() : Number(ui.gravity.value);
@@ -119,60 +118,37 @@ function finish(winner, loser, reason) {
   document.body.classList.remove("running");
   document.body.classList.add("played");
   battle = null;
-}
-
-function opponentChoice() {
-  const key = new URLSearchParams(location.search).get("opponent");
-  if (key && OPPONENTS[key] && ui.opponent.value !== key) ui.opponent.value = key;
-  return OPPONENTS[ui.opponent.value] || OPPONENTS.haiku;
-}
-
-function opponentKey() {
-  const v = ui.opponent.value;
-  return (v === "gemini" ? ui.geminiKey : v === "laya" ? ui.layaEndpoint : ui.haikuKey).value.trim();
-}
-
-function renderOpponent() {
-  const opp = opponentChoice();
-  ui.badgeR.textContent = opp.name;
-  ui.badgeR.className = `badge ${opp.badge}`;
-  ui.modelR.textContent = opp.label;
-  const v = ui.opponent.value;
-  ui.haikuKeyField.classList.toggle("hidden", v !== "haiku");
-  ui.geminiKeyField.classList.toggle("hidden", v !== "gemini");
-  ui.layaField.classList.toggle("hidden", v !== "laya");
-  ui.layaNote.classList.toggle("hidden", v !== "laya");
-  document.title = `Jev vs ${opp.name}`;
+  matchup.setDisabled(false);
 }
 
 async function startBattle() {
-  const jevKey = ui.jevKey.value.trim();
-  const opp = opponentChoice();
-  const oppKey = opponentKey();
-  if (!jevKey || !oppKey) {
-    showError(`Both keys are needed: a TypeSafe key for Jev and a ${opp.keyName} key for ${opp.name}.`);
-    return;
-  }
   hideError();
-  persistKeys();
-  if (ui.opponent.value === "laya") {
-    ui.start.disabled = true;
-    try {
-      const info = await checkLayaServer(oppKey);
-      ui.modelR.textContent = `${info.model || "laya"} · ${info.runtime || "local"}`;
-    } catch (err) {
-      showError(`Laya: ${err.message}`);
-      ui.start.disabled = false;
-      return;
-    }
+  ui.start.disabled = true;
+  matchup.setDisabled(true);
+  const startLabel = ui.start.textContent;
+  ui.start.textContent = "Connecting…";
+  let players;
+  try {
+    players = await matchup.prepare();
+  } catch (err) {
+    showError(err.message);
+    ui.start.disabled = false;
+    matchup.setDisabled(false);
+    return;
+  } finally {
+    ui.start.textContent = startLabel;
   }
+  persistKeys();
   const seed = Number(ui.seed.value) || 42;
   const gravityMs = Number(ui.gravity.value);
   const speedup = SPEEDUPS[ui.speedup.value] || SPEEDUPS.normal;
   const lockstep = ui.lockstep.checked;
   const garbage = ui.garbage.checked;
   const limitMs = Math.max(1, Number(ui.limit.value) || 5) * 60_000;
-  sides = [makeSide("L", createJevPlayer(jevKey), sideEls("L")), makeSide("R", opp.create(oppKey), sideEls("R"))];
+  sides = players.map((player, index) => {
+    const id = index === 0 ? "L" : "R";
+    return makeSide(id, player, sideEls(id));
+  });
   sides[0].opponent = sides[1];
   sides[1].opponent = sides[0];
   for (const s of sides) resetSide(s, seed);
@@ -213,7 +189,6 @@ function stopBattle() {
 function persistKeys() {
   try {
     if (ui.remember.checked) {
-      localStorage.setItem(STORAGE.jev, ui.jevKey.value.trim());
       localStorage.setItem(STORAGE.haiku, ui.haikuKey.value.trim());
       localStorage.setItem(STORAGE.gemini, ui.geminiKey.value.trim());
       localStorage.setItem(STORAGE.laya, ui.layaEndpoint.value.trim());
@@ -228,10 +203,6 @@ function persistKeys() {
 ui.start.addEventListener("click", startBattle);
 ui.stop.addEventListener("click", stopBattle);
 ui.remember.addEventListener("change", persistKeys);
-ui.opponent.addEventListener("change", () => {
-  renderOpponent();
-  if (!battle) sides[1].player = { name: opponentChoice().name, short: opponentChoice().short };
-});
 ui.gravity.addEventListener("input", () => {
   ui.gravityLabel.textContent = `${ui.gravity.value} ms per row`;
   if (!battle) renderLevel();
@@ -240,19 +211,33 @@ ui.gravityLabel.textContent = `${ui.gravity.value} ms per row`;
 renderLevel();
 
 try {
-  const j = localStorage.getItem(STORAGE.jev);
   const h = localStorage.getItem(STORAGE.haiku);
   const g = localStorage.getItem(STORAGE.gemini);
   const l = localStorage.getItem(STORAGE.laya);
-  if (j) ui.jevKey.value = j;
   if (h) ui.haikuKey.value = h;
   if (g) ui.geminiKey.value = g;
   if (l) ui.layaEndpoint.value = l;
-  if (j || h || g) ui.remember.checked = true;
+  if (h || g) ui.remember.checked = true;
 } catch {
   /* storage unavailable */
 }
 
-renderOpponent();
-sides = [makeSide("L", { name: "Jev", short: "Jev" }, sideEls("L")), makeSide("R", { name: opponentChoice().name, short: opponentChoice().short }, sideEls("R"))];
+matchup.render();
+sides = matchup.choices().map((player, index) => {
+  const id = index === 0 ? "L" : "R";
+  return makeSide(id, player, sideEls(id));
+});
 for (const s of sides) previewSide(s, Number(ui.seed.value) || 42);
+
+// Load safe server defaults before enabling the one-click start.
+ui.start.disabled = true;
+matchup.setDisabled(true);
+try {
+  matchup.configure(await loadFoundryConfig({ requireFoundry: false }));
+} catch (err) {
+  matchup.configure(foundry);
+  showError(err.message);
+} finally {
+  ui.start.disabled = false;
+  matchup.setDisabled(false);
+}

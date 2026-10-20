@@ -1,11 +1,12 @@
-// Presentation page: a best-of-N series between Jev and one opponent, laid
+// Presentation page: a best-of-N series between two selected players, laid
 // out for screen recordings. The boards fill the window height, the centre
 // column carries the series score, the round clock and the round result, and
 // nothing else is on screen once the series starts. Rounds run back to back
 // each on a fresh random seed shared by both sides (add ?seed=N to the URL for
 // a reproducible series instead); the series ends when one side has a majority.
 
-import { OPPONENTS, createJevPlayer, checkLayaServer } from "./players.js";
+import { loadFoundryConfig, foundry } from "./foundry.js";
+import { createMatchupControls } from "./matchup.js";
 import {
   SPEEDUPS,
   STORAGE,
@@ -31,14 +32,9 @@ const params = new URLSearchParams(location.search);
 const ui = {
   setup: $("setup"),
   setupError: $("setupError"),
-  opponent: $("opponent"),
-  jevKey: $("jevKey"),
   haikuKey: $("haikuKey"),
   geminiKey: $("geminiKey"),
   layaEndpoint: $("layaEndpoint"),
-  haikuKeyField: $("haikuKeyField"),
-  geminiKeyField: $("geminiKeyField"),
-  layaField: $("layaField"),
   remember: $("remember"),
   rounds: $("roundsInput"),
   hold: $("hold"),
@@ -49,10 +45,6 @@ const ui = {
   garbage: $("garbage"),
   lockstep: $("lockstep"),
   start: $("start"),
-  badgeR: $("badgeR"),
-  modelR: $("modelR"),
-  nameL: $("nameL"),
-  nameR: $("nameR"),
   scoreL: $("scoreL"),
   scoreR: $("scoreR"),
   seriesTitle: $("seriesTitle"),
@@ -92,9 +84,6 @@ function presentRows(side) {
   ];
 }
 
-// Short provider names for the narrow side panels.
-const PROVIDER = { haiku: "Anthropic", gemini: "Google", laya: "local, open weights" };
-
 const ROUND_ROWS = [
   ["Lines", (s) => s.lines],
   ["Pieces", (s) => s.pieces],
@@ -118,32 +107,17 @@ let sides = [];
 let series = null; // settings + { target, rounds, wins, draws, totals, stopped, done }
 let round = null; // { n, seed, ramp, abort, timer }
 let skipHold = null; // set while waiting between rounds; call to continue now
+const matchup = createMatchupControls({
+  titleSuffix: " · presentation",
+  onChange: (players) => {
+    if (!series) {
+      hideErrors();
+      sides.forEach((side, index) => { side.player = players[index]; });
+    }
+  },
+});
 
 // ---- Helpers ------------------------------------------------------------------------------
-
-function opponentChoice() {
-  const key = params.get("opponent");
-  if (key && OPPONENTS[key] && ui.opponent.value !== key) ui.opponent.value = key;
-  return OPPONENTS[ui.opponent.value] || OPPONENTS.haiku;
-}
-
-function opponentKey() {
-  const v = ui.opponent.value;
-  return (v === "gemini" ? ui.geminiKey : v === "laya" ? ui.layaEndpoint : ui.haikuKey).value.trim();
-}
-
-function renderOpponent() {
-  const opp = opponentChoice();
-  ui.badgeR.textContent = opp.name;
-  ui.badgeR.className = `badge ${opp.badge}`;
-  ui.modelR.textContent = PROVIDER[ui.opponent.value] || opp.label;
-  ui.nameR.textContent = opp.short;
-  const v = ui.opponent.value;
-  ui.haikuKeyField.classList.toggle("hidden", v !== "haiku");
-  ui.geminiKeyField.classList.toggle("hidden", v !== "gemini");
-  ui.layaField.classList.toggle("hidden", v !== "laya");
-  document.title = `Jev vs ${opp.name} · presentation`;
-}
 
 function gravityNow() {
   return round ? round.ramp.gravityNow() : Number(ui.gravity.value);
@@ -161,14 +135,22 @@ function renderScore() {
 }
 
 function renderRounds() {
-  const opp = opponentChoice();
-  ui.roundsList.innerHTML = series.rounds
-    .map((r) => {
-      const cls = r.winner === "L" ? "jev" : r.winner === "R" ? opp.badge : "draw";
-      const who = r.winner === "L" ? "Jev" : r.winner === "R" ? opp.short : "Draw";
-      return `<li><span class="n">R${r.n}</span><span class="w ${cls}">${who}</span><span class="t">${formatClock(r.elapsed)}</span><span class="l">${r.lines.L}–${r.lines.R}</span></li>`;
-    })
-    .join("");
+  ui.roundsList.replaceChildren(...series.rounds.map((r) => {
+    const winner = r.winner ? series.totals[r.winner].player : null;
+    const row = document.createElement("li");
+    for (const [className, text] of [
+      ["n", `R${r.n}`],
+      [`w ${winner?.badge || "draw"}`, winner?.short || "Draw"],
+      ["t", formatClock(r.elapsed)],
+      ["l", `${r.lines.L}–${r.lines.R}`],
+    ]) {
+      const cell = document.createElement("span");
+      cell.className = className;
+      cell.textContent = text;
+      row.append(cell);
+    }
+    return row;
+  }));
 }
 
 function showError(message) {
@@ -199,26 +181,23 @@ function addTotals(t, side) {
 // ---- Series --------------------------------------------------------------------------------
 
 async function startSeries() {
-  const jevKey = ui.jevKey.value.trim();
-  const opp = opponentChoice();
-  const oppKey = opponentKey();
   hideErrors();
-  if (!jevKey || !oppKey) {
-    showError(`Both are needed: a TypeSafe key for Jev and a ${opp.keyName} for ${opp.name}.`);
+  ui.start.disabled = true;
+  matchup.setDisabled(true);
+  const startLabel = ui.start.textContent;
+  ui.start.textContent = "Connecting…";
+  let players;
+  try {
+    players = await matchup.prepare();
+  } catch (err) {
+    showError(err.message);
+    ui.start.disabled = false;
+    matchup.setDisabled(false);
     return;
+  } finally {
+    ui.start.textContent = startLabel;
   }
   persistKeys();
-  ui.start.disabled = true;
-  if (ui.opponent.value === "laya") {
-    try {
-      const info = await checkLayaServer(oppKey);
-      ui.modelR.textContent = info.runtime || "laya · local";
-    } catch (err) {
-      showError(`Laya: ${err.message}`);
-      ui.start.disabled = false;
-      return;
-    }
-  }
   const total = Math.min(99, Math.max(1, Number(ui.rounds.value) || 1));
   series = {
     total,
@@ -237,7 +216,10 @@ async function startSeries() {
     stopped: false,
     done: false,
   };
-  sides = [makeSide("L", createJevPlayer(jevKey), sideEls("L"), presentRows), makeSide("R", opp.create(oppKey), sideEls("R"), presentRows)];
+  sides = players.map((player, index) => {
+    const id = index === 0 ? "L" : "R";
+    return makeSide(id, player, sideEls(id), presentRows);
+  });
   sides[0].opponent = sides[1];
   sides[1].opponent = sides[0];
   series.totals = { L: freshTotals(sides[0].player), R: freshTotals(sides[1].player) };
@@ -384,6 +366,7 @@ function newSeries() {
   round = null;
   ui.setup.classList.remove("hidden");
   ui.start.disabled = false;
+  matchup.setDisabled(false);
 }
 
 // ---- Keys and wiring ----------------------------------------------------------------------
@@ -391,7 +374,6 @@ function newSeries() {
 function persistKeys() {
   try {
     if (ui.remember.checked) {
-      localStorage.setItem(STORAGE.jev, ui.jevKey.value.trim());
       localStorage.setItem(STORAGE.haiku, ui.haikuKey.value.trim());
       localStorage.setItem(STORAGE.gemini, ui.geminiKey.value.trim());
       localStorage.setItem(STORAGE.laya, ui.layaEndpoint.value.trim());
@@ -405,11 +387,6 @@ function persistKeys() {
 
 ui.start.addEventListener("click", startSeries);
 ui.remember.addEventListener("change", persistKeys);
-ui.opponent.addEventListener("change", () => {
-  params.delete("opponent");
-  renderOpponent();
-  if (!series) sides[1].player = { name: opponentChoice().name, short: opponentChoice().short };
-});
 ui.gravity.addEventListener("input", () => {
   ui.gravityLabel.textContent = `${ui.gravity.value} ms per row`;
 });
@@ -437,21 +414,35 @@ if (params.has("speedup") && SPEEDUPS[params.get("speedup")]) ui.speedup.value =
 ui.gravityLabel.textContent = `${ui.gravity.value} ms per row`;
 
 try {
-  const j = localStorage.getItem(STORAGE.jev);
   const h = localStorage.getItem(STORAGE.haiku);
   const g = localStorage.getItem(STORAGE.gemini);
   const l = localStorage.getItem(STORAGE.laya);
-  if (j) ui.jevKey.value = j;
   if (h) ui.haikuKey.value = h;
   if (g) ui.geminiKey.value = g;
   if (l) ui.layaEndpoint.value = l;
-  if (j || h || g) ui.remember.checked = true;
+  if (h || g) ui.remember.checked = true;
 } catch {
   /* storage unavailable */
 }
 
-renderOpponent();
+matchup.render();
 ui.roundLabel.textContent = `Best of ${ui.rounds.value}`;
-sides = [makeSide("L", { name: "Jev", short: "Jev" }, sideEls("L"), presentRows), makeSide("R", { name: opponentChoice().name, short: opponentChoice().short }, sideEls("R"), presentRows)];
+sides = matchup.choices().map((player, index) => {
+  const id = index === 0 ? "L" : "R";
+  return makeSide(id, player, sideEls(id), presentRows);
+});
 for (const s of sides) previewSide(s, 42);
 renderLevel();
+
+// Load safe server defaults before enabling the one-click start.
+ui.start.disabled = true;
+matchup.setDisabled(true);
+try {
+  matchup.configure(await loadFoundryConfig({ requireFoundry: false }), params);
+} catch (err) {
+  matchup.configure(foundry, params);
+  showError(err.message);
+} finally {
+  ui.start.disabled = false;
+  matchup.setDisabled(false);
+}

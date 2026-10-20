@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jev vs the LLMs</title>
+  <title>Model vs model Tetris</title>
   <meta name="description" content="Two models play the same Tetris piece sequence in real time. First to top out loses." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='1' width='6' height='14' fill='%233fd6f0'/><rect x='9' y='1' width='6' height='14' fill='%23f4a340'/></svg>" />
   <link rel="stylesheet" href="style.css" />
@@ -12,15 +12,13 @@
 <body>
   <header class="top">
     <div>
-      <h1>Jev vs the LLMs</h1>
+      <h1 id="matchTitle">Model vs model Tetris</h1>
       <p class="sub">
-        Same piece sequence, same options, same clock. Pieces keep falling while each model thinks,
-        and gravity gets stronger as the minutes pass; a piece that lands before its answer arrives
-        locks where it is. Every line you clear lands on your opponent's board as a garbage row.
-        Whoever tops out first loses.
-        <a href="play.html">Play against Jev yourself</a> ·
-        <a href="solo.html">Single-player demo: Jev on its own</a> ·
-        <a href="present.html">Presentation page: best-of-N series for recordings</a>
+        Choose a model for each side. Same pieces, same legal moves, one clock.
+        Clear lines to attack the other board. First to top out loses.
+        <a href="play.html">Play against Decision-1 yourself</a> ·
+        <a href="solo.html">Watch Decision-1 solo</a> ·
+        <a href="present.html">Record a series</a>
       </p>
     </div>
   </header>
@@ -28,11 +26,12 @@
   <main class="arena">
     <section class="player" id="left">
       <div class="player-head">
-        <span class="badge jev">Jev</span>
-        <span class="model muted">jev-latest · TypeSafe</span>
+        <span class="badge jev" id="badgeL">Decision-1</span>
+        <span class="model muted" id="modelL">Microsoft Foundry · Entra ID</span>
+        <a class="model-price hidden" id="priceL" target="_blank" rel="noreferrer" title="Published base USD rate; displayed costs are estimates."></a>
       </div>
       <div class="board-wrap">
-        <canvas class="board" id="boardL" width="240" height="480" aria-label="Jev's board"></canvas>
+        <canvas class="board" id="boardL" width="240" height="480" aria-label="Decision-1's board"></canvas>
         <div class="overlay hidden" id="overlayL"></div>
       </div>
       <div class="incoming" id="incomingL"></div>
@@ -43,25 +42,28 @@
     <section class="center">
       <div class="present-title">Real-time Tetris</div>
       <div class="card" id="setup-card">
-        <h2>Keys</h2>
-        <label class="field">TypeSafe key <input id="jevKey" type="password" placeholder="apikey_…" autocomplete="off" spellcheck="false" /></label>
-        <label class="field">Opponent
-          <select id="opponent">
-            <option value="haiku" selected>Claude Haiku 4.5 (Anthropic)</option>
-            <option value="gemini">Gemini 3.8 Flash (Google)</option>
-            <option value="laya">Laya (local, open weights)</option>
-          </select>
+        <h2>Ready to play</h2>
+        <label class="field">Left player
+          <select id="playerL"><option value="decision">Decision-1 (Foundry)</option></select>
         </label>
-        <label class="field" id="haikuKeyField">Anthropic key <input id="haikuKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" /></label>
+        <label class="field">Right player
+          <select id="playerR"><option value="openai">OpenAI Decisions (gpt-6-luna)</option></select>
+        </label>
+        <p class="connection-status" data-connection-status role="status">Loading Foundry settings…</p>
+        <label class="field hidden" id="haikuKeyField">Anthropic key <input id="haikuKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" /></label>
         <label class="field hidden" id="geminiKeyField">Gemini key <input id="geminiKey" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false" /></label>
         <label class="field hidden" id="layaField">Laya server <input id="layaEndpoint" type="text" value="http://localhost:8765" autocomplete="off" spellcheck="false" /></label>
         <p class="hint hidden" id="layaNote">Laya runs on your own machine: <code>pip install laya-mlx</code> (Apple Silicon) or <code>pip install laya</code>, then
           <code>python tools/laya_server.py</code> from the repo. No key, no cost.</p>
-        <label class="remember"><input id="remember" type="checkbox" /> Remember keys in this browser</label>
-        <p class="hint">Keys go from this page to the proxy in <code>server.mjs</code>, which forwards each to its API and stores nothing.</p>
+        <label class="remember"><input id="remember" type="checkbox" /> Remember optional provider keys</label>
+        <p class="hint">Your models and authentication are set up on the server. Click Go to start the match.</p>
       </div>
-      <div class="card" id="rules-card">
-        <h2>Rules</h2>
+      <div class="controls center-controls">
+        <button id="start" class="primary" disabled>Go</button>
+        <button id="stop" disabled>Stop</button>
+      </div>
+      <details class="card" id="rules-card">
+        <summary>Match settings</summary>
         <label class="field">Starting gravity <span class="muted" id="gravityLabel"></span><input id="gravity" type="range" min="60" max="400" step="10" value="150" /></label>
         <label class="field">Speed-up
           <select id="speedup">
@@ -75,23 +77,20 @@
         <label class="field">Time limit (min) <input id="limit" type="number" min="1" max="30" value="5" /></label>
         <label class="field check"><input id="garbage" type="checkbox" checked /> Versus: cleared lines attack the opponent</label>
         <label class="field check"><input id="lockstep" type="checkbox" /> Wait for answers (no gravity)</label>
-      </div>
+      </details>
       <div class="vs">VS</div>
       <div class="clock" id="clock">0:00</div>
       <div class="level muted" id="level">Level 1 · 150 ms per row</div>
       <div class="match-info" id="matchInfo"></div>
-      <div class="controls center-controls">
-        <button id="start" class="primary">Start battle</button>
-        <button id="stop" disabled>Stop</button>
-      </div>
       <div id="result" class="result hidden"></div>
       <div id="error" class="error hidden" role="alert"></div>
     </section>
 
     <section class="player" id="right">
       <div class="player-head">
-        <span class="badge haiku" id="badgeR">Claude Haiku 4.5</span>
-        <span class="model muted" id="modelR">claude-haiku-4-5 · Anthropic</span>
+        <span class="badge gpt" id="badgeR">Foundry GPT</span>
+        <span class="model muted" id="modelR">Microsoft Foundry</span>
+        <a class="model-price hidden" id="priceR" target="_blank" rel="noreferrer" title="Published base USD rate; displayed costs are estimates."></a>
       </div>
       <div class="board-wrap">
         <canvas class="board" id="boardR" width="240" height="480" aria-label="Opponent's board"></canvas>
@@ -104,9 +103,8 @@
   </main>
 
   <footer class="foot">
-    Each side sees the same board text and the same described placement list. Jev answers with a Choice
-    distribution; the opponent answers through a forced function call whose argument is one of the option
-    ids. Latency is part of the game.
+    Each side sees the same board and the same legal placements. The models choose where to drop
+    each piece while gravity keeps it falling. Latency is part of the game.
   </footer>
 
   <script type="module" src="battle.js"></script>

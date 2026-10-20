@@ -105,7 +105,7 @@ test("buildRequest produces one criteria entry per placement with stable fields"
     { board, piece: "L", nextPiece: "I", stats: placements[0].before, linesCleared: 0 },
     placements,
   );
-  assert.equal(request.model, "jev-latest");
+  assert.equal(request.model, "Decision-1");
   assert.equal(Object.keys(request.questions.placement.criteria).length, placements.length);
   const fields = Object.keys(request.questions.placement.criteria.p0);
   for (const id of Object.keys(request.questions.placement.criteria)) {

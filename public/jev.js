@@ -1,4 +1,4 @@
-// Builds the TypeSafe request for one Tetris move and reads the answer.
+// Builds the typed Decision API request for one Tetris move and reads the answer.
 //
 // One request per piece, following the speculative fan-out pattern: the
 // placement Choice is the question that drives the game; the others are
@@ -6,7 +6,7 @@
 
 import { boardToText, describePlacement, describeHeight, describeSurface, describeHoles } from "./tetris.js";
 
-export const MODEL = "jev-latest";
+export const MODEL = "Decision-1";
 
 export const STRATEGY_OPTIONS = {
   build_clean: "The stack is low and tidy. Keep building a flat surface and wait for a chance to clear several lines at once.",
@@ -97,15 +97,14 @@ export class JevError extends Error {
   }
 }
 
-// Calls the local proxy (server.mjs), which forwards to api.typesafe.ai with
-// the key in the Authorization header. Retries 429/529 with backoff.
-export async function askJev(request, apiKey, { signal, maxAttempts = 4 } = {}) {
+// Calls the local proxy; it authenticates to Foundry using Microsoft Entra ID.
+// The legacy apiKey argument is ignored. Retries 429/529 with backoff.
+export async function askJev(request, apiKey, { signal, maxAttempts = 4, endpoint = "api/decision" } = {}) {
   let delay = 500;
   for (let attempt = 1; ; attempt++) {
     const started = performance.now();
     const headers = { "Content-Type": "application/json" };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    const res = await fetch("api/systemone", {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify(request),
@@ -127,7 +126,7 @@ export async function askJev(request, apiKey, { signal, maxAttempts = 4 } = {}) 
       delay *= 2;
       continue;
     }
-    const message = body?.detail?.message || body?.error || body?.message || body?.raw || `HTTP ${res.status}`;
+    const message = body?.detail?.message || body?.error?.message || body?.message || body?.raw || `HTTP ${res.status}`;
     throw new JevError(message, res.status, body);
   }
 }

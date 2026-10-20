@@ -1,15 +1,90 @@
-# Jev vs the LLMs: real-time Tetris
+# Model vs model Tetris
 
-Two AI models play Tetris against each other in real time. [Jev](https://docs.typesafe.ai), TypeSafe's
-System One model, faces Claude Haiku 4.5, Gemini 3.8 Flash, or [Laya](https://github.com/NandhaKishorM/laya),
-an open-weight typed-decision model running on your own machine. Same piece sequence, same options, same
-clock. Every line you clear lands on your opponent's board as a garbage row. Whoever tops out first loses.
+Choose the **Left player** and **Right player** independently on the battle and
+presentation pages. Either side can use Decision-1, OpenAI Decisions (`gpt-6-luna`),
+Foundry GPT, Claude Haiku, Gemini, Laya, or the built-in heuristic. You can also run
+the same model on both sides. Model names load from `.env`; Decision-1 versus OpenAI
+Decisions remains the default when both are configured. Select the pair and click **Go**.
+Foundry and OpenAI credentials stay on the server; optional provider keys use the existing fields.
 
-**Play it live:** [jev-tetris.vercel.app](https://jev-tetris.vercel.app)
-(bring a TypeSafe key plus an Anthropic or Gemini key; the proxy stores nothing. Laya needs no key,
-just its local server, see [Laya, the open-weight opponent](#laya-the-open-weight-opponent)).
+For example, open **http://localhost:3000/?left=openai&right=gpt** to play OpenAI
+Decisions against your configured Foundry GPT deployment. The same parameters work on
+`present.html`. Player IDs are `decision`, `openai`, `gpt`, `heuristic`, `haiku`,
+`gemini`, and `laya`. Existing `?opponent=...` links still select the right player.
+Unavailable server-backed models are disabled in both selectors. Each selected provider's
+key field is shown, and the model choices stay fixed until the match or series ends.
+Matches without a Foundry player do not require Azure configuration or Entra sign-in.
 
-![Jev vs Claude Haiku, versus mode](docs/battle.png)
+## Start locally
+
+From the repository folder, run the commands below.
+
+Requires Node.js 22 or later. Foundry players also require an identity with inference
+access to your Foundry resource.
+
+```sh
+npm install
+# If .env does not already exist, copy .env.example to .env and set your endpoints.
+az login # Only needed when selecting a Foundry player.
+npm start
+```
+
+Open **http://localhost:3000**. The existing `.env` is loaded automatically. Host
+process variables override file values. Restart the server after changing `.env`.
+
+| Setting | Purpose |
+| --- | --- |
+| `AZURE_OPENAI_BASE_URL` | GPT Responses base URL, e.g. `https://RESOURCE.openai.azure.com/openai/v1`. |
+| `AZURE_AI_PROJECT_ENDPOINT` | Existing Foundry project URL; its resource origin is used for Decision-1. |
+| `AZURE_AI_RESOURCE_ENDPOINT` | Optional explicit Decision resource URL; takes precedence over the project URL. |
+| `AZURE_DECISION_DEPLOYMENT` | Decision deployment name; defaults to `Decision-1`. |
+| `AZURE_GPT_DEPLOYMENT` | Optional Foundry GPT Responses opponent deployment name. |
+| `OPENAI_API_KEY` | Server-side key for the OpenAI Decisions opponent. |
+| `OPENAI_DECISION_MODEL` | Defaults to `gpt-6-luna`, the model currently supported by OpenAI Decisions. |
+| `AZURE_TOKEN_SCOPE` | Defaults to `https://cognitiveservices.azure.com/.default`. |
+| `AZURE_DECISION_ENDPOINT` | Optional complete Decision API URL override, including any required query parameters. |
+| `GPT_REASONING_EFFORT` | Defaults to `none`; use an effort supported by your GPT deployment. |
+| `GPT_MAX_OUTPUT_TOKENS` | Defaults to `1024`. |
+| `PORT` | Defaults to `3000`. |
+
+The server uses `DefaultAzureCredential` and refreshed Entra bearer tokens, with
+the OpenAI JavaScript client for Decision API requests and GPT Responses requests.
+`OPENAI_API_KEY` is used only for the separate OpenAI Decisions opponent. For a Foundry service principal, set `AZURE_TENANT_ID`,
+`AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET`. On Azure, a managed identity can supply
+the credentials instead. Keep secrets in the ignored `.env`, never in `public/`.
+
+Microsoft's [Decision-1 documentation](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision)
+specifies `/providers/microsoft/v1/systemone` on the Foundry resource. This app uses
+that route with `{model, state, questions}`. `AZURE_DECISION_ENDPOINT` can override
+the complete URL for a compatible gateway.
+
+[OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) uses
+`POST https://api.openai.com/v1/decisions` via `client.decisions.create()`. Its
+`input`, named `questions` array and `choices` array are built from the same board
+and placements used by Decision-1. Refusals and invalid choices are reported as
+invalid decisions. Its API key stays on the server.
+
+The optional Foundry GPT opponent uses `/openai/v1/responses` with a forced, strict
+`place_piece` function call. If no OpenAI key is configured, the landing page selects
+Foundry GPT when available, otherwise the local heuristic.
+
+The **Check connection** action verifies Entra sign-in; deployment access is verified
+when a model request runs. A 401/403 means sign-in or role access needs attention;
+404 means the endpoint or deployment should be checked.
+
+**Decision-1 input tokens cost $0.042 USD per million tokens; output tokens are free.**
+The [published rate](https://commandline.microsoft.com/microsoft-decision-1-model-foundry/)
+appears beneath Decision-1's model name on either side. Battle, presentation, human-play,
+and solo costs use the reported input-token usage at that base rate. Small nonzero costs
+remain visible instead of rounding to zero. Missing usage displays `–`. Foundry GPT
+costs still display `–` because its deployment rate is not configured.
+OpenAI Decisions uses the documented $0.10 per million input tokens for `gpt-6-luna`
+without regional or long-context premiums; its displayed cost is an estimate.
+
+The human-versus-model and solo pages use Decision-1 with the same server credentials.
+The presentation page uses the two selected models throughout the series, including
+its board labels, round winners, and totals. The gameplay notes and historical Jev benchmark results
+below describe the original application; those measurements are not Decision-1 results.
 
 ## The battle
 
@@ -139,7 +214,7 @@ and Jev on the right with the same versus rules: shared piece sequence, rising g
 lines become garbage for the other side, first to top out loses. Arrow keys move, up or X rotates,
 Z rotates back, down soft-drops, space hard-drops; on touch screens a button row appears under the
 board. You get a ghost piece and a short lock delay. Gravity starts gentler than in the model battle
-(500 ms per row, 10% faster every 30 s) and is adjustable. Only a TypeSafe key is needed.
+(500 ms per row, 10% faster every 30 s) and is adjustable. This checkout uses the Foundry Entra credentials from `.env`.
 
 ## Single player: Jev on its own
 
@@ -181,42 +256,17 @@ clears readily and tolerates holes more than the heuristic does; the `priorities
 `public/jev.js` is where to push it toward cleaner play. No key? Switch to the built-in heuristic to
 watch the code-only player.
 
-## Run it yourself
+## Hosting
 
-Requires Node.js 20 or newer. There are no dependencies.
+The same Foundry handlers run locally and as Vercel functions in `api/`. Configure
+the environment variables on your host and supply an Entra service principal or a
+supported managed identity. Azure CLI sign-in is for local development. Install
+dependencies before running the server (`npm install`).
 
-```sh
-npm start
-# open http://localhost:3000 (battle) or http://localhost:3000/solo.html (single player)
-```
-
-Or deploy your own copy to Vercel; the repo ships `api/` functions that act as the proxy:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftrungdq88%2Fjev-tetris&project-name=jev-tetris&repository-name=jev-tetris)
-
-Any host that runs `npm start` on a Node 20+ box works too.
-
-### Why there is a server
-
-`api.typesafe.ai` rejects browser origins (CORS), so the page cannot call it directly.
-[`server.mjs`](server.mjs) serves the static files and forwards `POST /api/systemone`,
-`GET /api/models`, `POST /api/anthropic` and `POST /api/gemini` to TypeSafe, Anthropic and Google
-with the key the page sent in the request. It keeps no state and never logs a key. The same logic runs as Vercel functions
-in `api/`.
-
-Optional environment variables:
-
-| Variable | Meaning |
-| --- | --- |
-| `PORT` | Port to listen on. Default `3000`. |
-| `TYPESAFE_API_KEY` | If set, visitors who leave the TypeSafe key blank use this key. Leave unset for a public deployment. |
-| `TYPESAFE_API_BASE` | Override the TypeSafe API base URL. |
-| `ANTHROPIC_API_BASE` | Override the Anthropic API base URL. |
-| `GEMINI_API_BASE` | Override the Gemini API base URL. |
-
-Laya needs none of these: the page talks to `tools/laya_server.py` directly.
-
-Behind a corporate proxy, run with `NODE_USE_ENV_PROXY=1` so Node's `fetch` honours `HTTPS_PROXY`.
+The server exposes `/api/decision`, `/api/openai-decision`, `/api/gpt`, `/api/config` (public settings only),
+and `/api/connection` (checks Entra authentication). `/api/systemone` and `/api/models`
+remain compatibility aliases. Optional Anthropic, Gemini and local Laya opponents
+remain available in the opponent menu.
 
 ## Tests
 
@@ -232,7 +282,10 @@ answer mapping, the Haiku tool schema and reply parser).
 
 ```
 server.mjs            local static server + proxies
-lib/typesafe.mjs      TypeSafe proxy logic shared by server.mjs and api/
+lib/foundry.mjs       Entra authentication and Foundry Decision/GPT proxies
+lib/openai-decisions.mjs  OpenAI Decisions proxy with a server-side API key
+lib/config.mjs        public configuration allowlist
+lib/typesafe.mjs      shared HTTP helpers and legacy TypeSafe utilities
 lib/anthropic.mjs     Anthropic Messages API proxy for the battle
 lib/gemini.mjs        Gemini generateContent proxy for the battle
 api/*.js              the same proxies as Vercel serverless functions

@@ -1,3 +1,4 @@
+import { loadFoundryConfig, ensureFoundryConnection } from "./foundry.js";
 // Human vs Jev. The human side is keyboard-driven (move, rotate, soft and hard
 // drop, with a short lock delay); Jev's side is the same real-time model loop
 // the battle uses. Both share the piece sequence, the gravity ramp, and the
@@ -34,8 +35,6 @@ const MAX_LOCK_RESETS = 8;
 const KICKS = [0, -1, 1, -2, 2];
 
 const ui = {
-  jevKey: $("jevKey"),
-  remember: $("remember"),
   gravity: $("gravity"),
   gravityLabel: $("gravityLabel"),
   speedup: $("speedup"),
@@ -367,21 +366,22 @@ function finish(winner, loser, reason) {
 }
 
 async function startMatch() {
-  const jevKey = ui.jevKey.value.trim();
-  if (!jevKey) {
-    showError("Jev needs a TypeSafe key to play. Paste yours above.");
-    ui.jevKey.focus();
+  hideError();
+  ui.start.disabled = true;
+  try {
+    await ensureFoundryConnection();
+  } catch (err) {
+    showError(err.message);
+    ui.start.disabled = false;
     return;
   }
-  hideError();
-  persistKey();
   const seed = Number(ui.seed.value) || 42;
   const gravityMs = Number(ui.gravity.value);
   const speedup = SPEEDUPS[ui.speedup.value] || SPEEDUPS.gentle;
   const garbage = ui.garbage.checked;
   const jevGravity = ui.jevGravity.checked;
   const limitMs = Math.max(1, Number(ui.limit.value) || 5) * 60_000;
-  sides = [makeSide("L", HUMAN, sideEls("L"), humanStatsRows), makeSide("R", createJevPlayer(jevKey), sideEls("R"))];
+  sides = [makeSide("L", HUMAN, sideEls("L"), humanStatsRows), makeSide("R", createJevPlayer(), sideEls("R"))];
   sides[0].opponent = sides[1];
   sides[1].opponent = sides[0];
   for (const s of sides) resetSide(s, seed);
@@ -419,18 +419,8 @@ function giveUp() {
 
 // ---- Wiring ----------------------------------------------------------------------------------------
 
-function persistKey() {
-  try {
-    if (ui.remember.checked) localStorage.setItem(STORAGE.jev, ui.jevKey.value.trim());
-    else localStorage.removeItem(STORAGE.jev);
-  } catch {
-    /* storage unavailable */
-  }
-}
-
 ui.start.addEventListener("click", startMatch);
 ui.stop.addEventListener("click", giveUp);
-ui.remember.addEventListener("change", persistKey);
 ui.gravity.addEventListener("input", () => {
   ui.gravityLabel.textContent = `${ui.gravity.value} ms per row`;
   if (!match) renderLevel();
@@ -438,15 +428,11 @@ ui.gravity.addEventListener("input", () => {
 ui.gravityLabel.textContent = `${ui.gravity.value} ms per row`;
 renderLevel();
 
-try {
-  const j = localStorage.getItem(STORAGE.jev);
-  if (j) {
-    ui.jevKey.value = j;
-    ui.remember.checked = true;
-  }
-} catch {
-  /* storage unavailable */
-}
 
-sides = [makeSide("L", HUMAN, sideEls("L"), humanStatsRows), makeSide("R", { name: "Jev", short: "Jev" }, sideEls("R"))];
+
+sides = [makeSide("L", HUMAN, sideEls("L"), humanStatsRows), makeSide("R", { name: "Decision-1", short: "Decision-1" }, sideEls("R"))];
 for (const s of sides) previewSide(s, Number(ui.seed.value) || 42);
+
+ui.start.disabled = true;
+try { await loadFoundryConfig(); } catch (err) { showError(err.message); }
+finally { ui.start.disabled = false; }

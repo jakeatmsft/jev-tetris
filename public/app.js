@@ -1,3 +1,5 @@
+import { loadFoundryConfig, ensureFoundryConnection } from "./foundry.js";
+import { decisionCost, formatUsd } from "./pricing.js";
 import {
   WIDTH,
   HEIGHT,
@@ -16,8 +18,6 @@ import {
 import { buildRequest, askJev, pickPlacement, JevError, STRATEGY_OPTIONS, HEALTH_LEVELS } from "./jev.js";
 
 const $ = (id) => document.getElementById(id);
-const PRICE_PER_TOKEN = 0.042 / 1_000_000; // $0.042 per million input tokens (docs.typesafe.ai/models)
-const KEY_STORAGE = "jev_tetris_api_key";
 
 // ---- DOM ------------------------------------------------------------------
 const canvas = $("board");
@@ -33,10 +33,7 @@ const ui = {
   pause: $("pause"),
   reset: $("reset"),
   speed: $("speed"),
-  apiKey: $("apiKey"),
-  toggleKey: $("toggleKey"),
   testKey: $("testKey"),
-  remember: $("remember"),
   keyStatus: $("keyStatus"),
   score: $("score"),
   lines: $("lines"),
@@ -78,16 +75,16 @@ const game = {
   flash: [], // row indexes being cleared
 };
 
-const stats = { calls: 0, latency: 0, tokens: 0, agreements: 0, decisions: 0 };
+const stats = { calls: 0, latency: 0, tokens: 0, cost: 0, agreements: 0, decisions: 0 };
 
 let abort = null;
 let serverKeyConfigured = false;
 // False when the page is served without its proxy (static hosting, file://).
-// Jev mode needs the proxy because api.typesafe.ai rejects browser origins.
+// Decision-1 mode needs the proxy because api.typesafe.ai rejects browser origins.
 let backendAvailable = true;
 const NO_BACKEND_MESSAGE =
   "This copy of the page has no proxy server, so it cannot reach api.typesafe.ai (the API blocks browser origins). " +
-  "Run `npm start` locally or deploy the repo to get Jev mode. The built-in heuristic works here.";
+  "Run `npm start` locally or deploy the repo to get Decision-1 mode. The built-in heuristic works here.";
 
 function mode() {
   return document.querySelector('input[name="mode"]:checked').value;
@@ -110,11 +107,11 @@ function resetGame() {
   game.active = null;
   game.ghosts = [];
   game.flash = [];
-  Object.assign(stats, { calls: 0, latency: 0, tokens: 0, agreements: 0, decisions: 0 });
+  Object.assign(stats, { calls: 0, latency: 0, tokens: 0, cost: 0, agreements: 0, decisions: 0 });
   ui.overlay.classList.add("hidden");
   ui.chosen.innerHTML = '<span class="muted">No move yet.</span>';
   ui.alternatives.innerHTML = "";
-  ui.decisionTitle.textContent = "Jev's move";
+  ui.decisionTitle.textContent = "Decision-1's move";
   ui.readsNote.classList.add("hidden");
   renderReads(null);
   ui.reqJson.textContent = "–";
@@ -205,7 +202,7 @@ function renderStats() {
   ui.calls.textContent = stats.calls;
   ui.latency.textContent = stats.calls ? `${Math.round(stats.latency / stats.calls)} ms` : "–";
   ui.tokens.textContent = stats.tokens.toLocaleString();
-  ui.cost.textContent = `$${(stats.tokens * PRICE_PER_TOKEN).toFixed(4)}`;
+  ui.cost.textContent = formatUsd(stats.cost);
   ui.agree.textContent = stats.decisions ? `${Math.round((100 * stats.agreements) / stats.decisions)}%` : "–";
 }
 
@@ -247,7 +244,7 @@ function renderDecision(decision, source) {
   const { chosen, ranked, confidence } = decision;
   const d = describePlacement(chosen);
   const conf = source === "jev" ? `confidence ${confidence.toFixed(2)}` : "code heuristic, no model call";
-  ui.decisionTitle.textContent = source === "jev" ? "Jev's move" : "Heuristic's move";
+  ui.decisionTitle.textContent = source === "jev" ? "Decision-1's move" : "Heuristic's move";
   ui.readsNote.classList.toggle("hidden", source === "jev");
   ui.chosen.innerHTML = `<strong>${chosen.piece}</strong> → ${d.where}
     <span class="muted">(${conf})</span>
@@ -321,12 +318,13 @@ async function jevDecision(placements, signal) {
     placements,
   );
   ui.reqJson.textContent = JSON.stringify(request, null, 2);
-  setStatus(`Asking Jev where to put the ${game.current} (${placements.length} options)…`, "thinking");
-  const { response, latencyMs } = await askJev(request, currentKey(), { signal });
+  setStatus(`Asking Decision-1 where to put the ${game.current} (${placements.length} options)…`, "thinking");
+  const { response, latencyMs } = await askJev(request, undefined, { signal });
   ui.resJson.textContent = JSON.stringify(response, null, 2);
   stats.calls += 1;
   stats.latency += latencyMs;
   stats.tokens += response?.usage?.input_tokens || 0;
+  stats.cost += decisionCost(response?.usage);
   renderReads(response.answers);
   return pickPlacement(response, placements);
 }
@@ -442,17 +440,17 @@ function endGame() {
 function handleJevError(err) {
   if (err instanceof JevError) {
     if (err.status === 401 || err.status === 403) {
-      showError(`TypeSafe rejected the key: ${err.message}`);
-      setKeyStatus("Key rejected.", false);
+      showError(`Foundry authentication failed: ${err.message}`);
+      setKeyStatus("Entra authentication failed.", false);
     } else if (err.status === 429) {
-      showError("Rate limited by TypeSafe even after retries. Wait a moment, then press Start.");
+      showError("Rate limited by Foundry even after retries. Wait a moment, then press Start.");
     } else if (err.status === 422) {
-      showError(`TypeSafe rejected the request (422): ${JSON.stringify(err.detail)}`);
+      showError(`Foundry rejected the request (422): ${JSON.stringify(err.detail)}`);
     } else {
-      showError(`Jev call failed (${err.status}): ${err.message}`);
+      showError(`Decision-1 call failed (${err.status}): ${err.message}`);
     }
   } else {
-    showError(`Jev call failed: ${err.message}`);
+    showError(`Decision-1 call failed: ${err.message}`);
   }
   setStatus("Paused after an error.", "error");
 }
@@ -464,9 +462,8 @@ function start() {
     showError(NO_BACKEND_MESSAGE);
     return;
   }
-  if (mode() === "jev" && !currentKey() && !serverKeyConfigured) {
-    showError("Enter your TypeSafe API key first, or switch to the built-in heuristic.");
-    ui.apiKey.focus();
+  if (mode() === "jev" && !serverKeyConfigured) {
+    showError("Configure Foundry in .env, or switch to the built-in heuristic.");
     return;
   }
   hideError();
@@ -496,26 +493,15 @@ function reset() {
   resetGame();
   ui.start.disabled = false;
   ui.start.textContent = "Start";
-  setStatus(mode() === "jev" ? "Ready. Press Start and Jev takes over." : "Ready. Press Start for the built-in heuristic.");
+  setStatus(mode() === "jev" ? "Ready. Press Start and Decision-1 takes over." : "Ready. Press Start for the built-in heuristic.");
 }
 
 // ---- API key ------------------------------------------------------------------------
-function currentKey() {
-  return ui.apiKey.value.trim();
-}
+
 
 function setKeyStatus(text, ok) {
   ui.keyStatus.textContent = text;
   ui.keyStatus.className = `key-status ${ok ? "ok" : "bad"}`;
-}
-
-function persistKey() {
-  try {
-    if (ui.remember.checked && currentKey()) localStorage.setItem(KEY_STORAGE, currentKey());
-    else localStorage.removeItem(KEY_STORAGE);
-  } catch {
-    /* storage unavailable */
-  }
 }
 
 async function testKey() {
@@ -524,21 +510,17 @@ async function testKey() {
     showError(NO_BACKEND_MESSAGE);
     return;
   }
-  if (!currentKey() && !serverKeyConfigured) {
-    setKeyStatus("Enter a key first.", false);
+  if (!serverKeyConfigured) {
+    setKeyStatus("Configure Foundry in .env first.", false);
     return;
   }
   ui.testKey.disabled = true;
   setKeyStatus("Checking…", true);
   try {
-    const res = await fetch("api/models", { headers: { Authorization: `Bearer ${currentKey()}` } });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body?.detail?.message || `HTTP ${res.status}`);
-    const names = (body.models || []).map((m) => m.name).join(", ");
-    setKeyStatus(`Key works. Models: ${names || "listed"}`, true);
-    persistKey();
+    await ensureFoundryConnection();
+    setKeyStatus("Microsoft Entra ID connected.", true);
   } catch (err) {
-    setKeyStatus(`Key check failed: ${err.message}`, false);
+    setKeyStatus(`Connection check failed: ${err.message}`, false);
   } finally {
     ui.testKey.disabled = false;
   }
@@ -549,15 +531,10 @@ ui.start.addEventListener("click", start);
 ui.pause.addEventListener("click", pause);
 ui.reset.addEventListener("click", reset);
 ui.testKey.addEventListener("click", testKey);
-ui.toggleKey.addEventListener("click", () => {
-  ui.apiKey.type = ui.apiKey.type === "password" ? "text" : "password";
-});
-ui.apiKey.addEventListener("change", persistKey);
-ui.remember.addEventListener("change", persistKey);
 document.querySelectorAll('input[name="mode"]').forEach((el) =>
   el.addEventListener("change", () => {
     if (!game.running && !game.over) {
-      setStatus(mode() === "jev" ? "Ready. Press Start and Jev takes over." : "Ready. Press Start for the built-in heuristic.");
+      setStatus(mode() === "jev" ? "Ready. Press Start and Decision-1 takes over." : "Ready. Press Start for the built-in heuristic.");
     }
   }),
 );
@@ -570,29 +547,20 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-try {
-  const saved = localStorage.getItem(KEY_STORAGE);
-  if (saved) {
-    ui.apiKey.value = saved;
-    ui.remember.checked = true;
-  }
-} catch {
-  /* storage unavailable */
-}
 function markNoBackend() {
   backendAvailable = false;
   document.querySelector('input[name="mode"][value="heuristic"]').checked = true;
   setStatus("Preview without a proxy server: the heuristic plays. Press Start.");
-  ui.apiKey.placeholder = "Jev mode needs the proxy server (npm start)";
 }
 
-fetch("api/config", { cache: "no-store" })
-  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+ui.start.disabled = true;
+loadFoundryConfig()
   .then((cfg) => {
-    serverKeyConfigured = Boolean(cfg.serverKeyConfigured);
-    if (serverKeyConfigured) ui.apiKey.placeholder = "host key configured; leave blank to use it";
+    serverKeyConfigured = cfg.configured;
+    setStatus("Ready. Press Start and Decision-1 takes over.");
   })
-  .catch(markNoBackend);
+  .catch((err) => { showError(err.message); markNoBackend(); })
+  .finally(() => { ui.start.disabled = false; });
 
 resetGame();
-setStatus("Enter your TypeSafe API key and press Start.");
+setStatus("Loading Foundry settings…");

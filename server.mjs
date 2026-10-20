@@ -1,26 +1,18 @@
-// Zero-dependency static server + passthrough proxy for the TypeSafe API.
-//
-// Browsers cannot call api.typesafe.ai directly (its CORS policy rejects
-// every browser origin), so the page posts to /api/systemone here and this
-// server forwards the request unchanged, using the Authorization header the
-// visitor supplied in the page. The key is never stored on the server.
-//
-// The same proxy logic runs as Vercel functions in api/ for hosted deploys.
-
+// Static app and server-side Foundry proxies. Credentials stay on the server.
+import "./lib/env.mjs";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  SERVER_KEY,
-  configResult,
-  forwardToTypeSafe,
   jsonResult,
-  keyFromAuthorization,
   readJsonBody,
   validateJson,
   writeResult,
 } from "./lib/typesafe.mjs";
+import { configResult } from "./lib/config.mjs";
+import { forwardOpenaiDecision } from "./lib/openai-decisions.mjs";
+import { foundrySettings, forwardDecision, forwardGpt, connectionResult } from "./lib/foundry.mjs";
 import { forwardToAnthropic } from "./lib/anthropic.mjs";
 import { forwardToGemini } from "./lib/gemini.mjs";
 
@@ -66,20 +58,14 @@ async function serveStatic(res, urlPath) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   try {
-    if (url.pathname === "/api/systemone" && req.method === "POST") {
+    if (["/api/decision", "/api/systemone", "/api/gpt", "/api/openai-decision"].includes(url.pathname) && req.method === "POST") {
       const body = await readJsonBody(req);
-      const invalid = validateJson(body);
-      if (invalid) {
-        writeResult(res, invalid);
-        return;
-      }
-      const result = await forwardToTypeSafe({
-        path: "/v1/systemone",
-        method: "POST",
-        key: keyFromAuthorization(req.headers.authorization),
-        body,
-      });
-      writeResult(res, result);
+      const forward = url.pathname === "/api/openai-decision" ? forwardOpenaiDecision : url.pathname === "/api/gpt" ? forwardGpt : forwardDecision;
+      writeResult(res, await forward({ body }));
+      return;
+    }
+    if (["/api/connection", "/api/models"].includes(url.pathname) && req.method === "GET") {
+      writeResult(res, await connectionResult());
       return;
     }
     if (url.pathname === "/api/anthropic" && req.method === "POST") {
@@ -95,15 +81,6 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/gemini" && req.method === "POST") {
       const body = await readJsonBody(req);
       writeResult(res, await forwardToGemini({ key: req.headers["x-goog-api-key"] || "", body }));
-      return;
-    }
-    if (url.pathname === "/api/models" && req.method === "GET") {
-      const result = await forwardToTypeSafe({
-        path: "/v1/models",
-        method: "GET",
-        key: keyFromAuthorization(req.headers.authorization),
-      });
-      writeResult(res, result);
       return;
     }
     if (url.pathname === "/api/config" && req.method === "GET") {
@@ -127,5 +104,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`jev-tetris listening on http://localhost:${PORT}`);
-  if (SERVER_KEY) console.log("Using TYPESAFE_API_KEY from the environment as the fallback key.");
+  const settings = foundrySettings();
+  console.log(settings.configured ? `Foundry ${settings.decisionDeployment} · Microsoft Entra ID` : settings.error);
 });

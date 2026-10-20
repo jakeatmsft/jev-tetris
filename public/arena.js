@@ -22,6 +22,8 @@ import {
   describePlacement,
 } from "./tetris.js";
 
+import { formatUsd } from "./pricing.js";
+
 export const SPEEDUPS = {
   none: { everyMs: Infinity, factor: 1 },
   gentle: { everyMs: 30_000, factor: 0.9 },
@@ -45,9 +47,7 @@ export function fmtMs(ms) {
   return `${Math.round(ms)} ms`;
 }
 
-export function fmtUsd(v, digits = 4) {
-  return `$${v.toFixed(digits)}`;
-}
+export const fmtUsd = formatUsd;
 
 export function formatClock(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
