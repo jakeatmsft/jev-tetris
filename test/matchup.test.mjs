@@ -5,7 +5,7 @@ import { playerAvailable, resolveMatchup, prepareMatchup } from "../public/match
 const configured = {
   configured: true, gptConfigured: true, openaiConfigured: true, defaultOpponent: "openai",
 };
-const noFoundry = { ...configured, configured: false, gptConfigured: false };
+const noFoundry = { ...configured, configured: false, gptConfigured: false, openaiConfigured: false, defaultOpponent: "heuristic" };
 const unexpected = () => assert.fail("Unexpected Foundry connection");
 
 test("either side accepts every player, including mirror matches and legacy URLs", () => {
@@ -22,23 +22,21 @@ test("either side accepts every player, including mirror matches and legacy URLs
 test("unknown and unconfigured models fall back to available players on both sides", () => {
   assert.equal(playerAvailable("decision", noFoundry), false);
   assert.equal(playerAvailable("gpt", noFoundry), false);
-  assert.equal(playerAvailable("openai", noFoundry), true);
-  assert.deepEqual(resolveMatchup(noFoundry, new URLSearchParams("left=decision&right=gpt")), ["openai", "openai"]);
+  assert.equal(playerAvailable("openai", noFoundry), false);
+  assert.deepEqual(resolveMatchup(noFoundry, new URLSearchParams("left=decision&right=gpt")), ["heuristic", "heuristic"]);
+  assert.deepEqual(resolveMatchup(noFoundry, new URLSearchParams("left=openai&right=openai")), ["heuristic", "heuristic"]);
   assert.deepEqual(resolveMatchup({}, new URLSearchParams("left=__proto__&right=constructor")), ["heuristic", "heuristic"]);
 });
 
-test("OpenAI and local players start on either side without Azure configuration or sign-in", async () => {
-  for (const ids of [["openai", "heuristic"], ["heuristic", "openai"], ["openai", "openai"]]) {
-    const players = await prepareMatchup(ids, {}, { config: noFoundry, connect: unexpected });
-    assert.equal(players.length, 2);
-    assert.notEqual(players[0], players[1]);
-    assert.equal(players[ids.indexOf("openai")].name, "OpenAI Decisions");
-    assert.ok(players.every((player) => typeof player.decide === "function"));
-  }
+test("local heuristic mirror matches start without Azure configuration or sign-in", async () => {
+  const players = await prepareMatchup(["heuristic", "heuristic"], {}, { config: noFoundry, connect: unexpected });
+  assert.equal(players.length, 2);
+  assert.notEqual(players[0], players[1]);
+  assert.ok(players.every((player) => typeof player.decide === "function"));
 });
 
 test("a Foundry player on either side requires one shared authentication check", async () => {
-  for (const ids of [["openai", "decision"], ["gpt", "openai"], ["decision", "gpt"], ["gpt", "gpt"]]) {
+  for (const ids of [["openai", "heuristic"], ["heuristic", "openai"], ["openai", "openai"], ["openai", "decision"], ["gpt", "openai"], ["decision", "gpt"], ["gpt", "gpt"]]) {
     let connections = 0;
     await prepareMatchup(ids, {}, { config: configured, connect: async () => { connections++; } });
     assert.equal(connections, 1);
@@ -57,6 +55,7 @@ test("both sides validate provider configuration and required keys before connec
     await assert.rejects(prepareMatchup(ids, {}, { config: configured, connect: unexpected }), message);
   }
   await assert.rejects(prepareMatchup(["decision", "openai"], {}, { config: noFoundry, connect: unexpected }), /Left model is not configured/);
+  await assert.rejects(prepareMatchup(["heuristic", "openai"], {}, { config: noFoundry, connect: unexpected }), /Right model is not configured/);
   const players = await prepareMatchup(["haiku", "gemini"], { haiku: "test-key", gemini: "test-key" }, {
     config: {}, connect: unexpected,
   });
@@ -67,8 +66,9 @@ test("both sides validate provider configuration and required keys before connec
 test("Laya's health check works on either side and is shared for mirror matches", async () => {
   for (const ids of [["laya", "openai"], ["openai", "laya"], ["laya", "laya"]]) {
     let checked = 0;
+    let connections = 0;
     const players = await prepareMatchup(ids, { laya: " http://localhost:8765 " }, {
-      config: noFoundry, connect: unexpected,
+      config: configured, connect: async () => { connections++; },
       checkLaya: async (endpoint) => {
         assert.equal(endpoint, "http://localhost:8765");
         checked++;
@@ -76,6 +76,7 @@ test("Laya's health check works on either side and is shared for mirror matches"
       },
     });
     assert.equal(checked, 1);
+    assert.equal(connections, ids.includes("openai") ? 1 : 0);
     assert.equal(players[ids.indexOf("laya")].endpoint, "http://localhost:8765");
     assert.equal(players[ids.indexOf("laya")].label, "custom-laya · mlx");
   }
@@ -86,7 +87,7 @@ test("loading the model menu permits missing Foundry while existing Foundry-only
   t.after(() => { delete globalThis.document; });
   t.mock.method(globalThis, "fetch", async () => Response.json({ ...noFoundry, message: "Foundry is not configured" }));
   const { loadFoundryConfig } = await import("../public/foundry.js?matchup-test");
-  assert.equal((await loadFoundryConfig({ requireFoundry: false })).openaiConfigured, true);
+  assert.equal((await loadFoundryConfig({ requireFoundry: false })).openaiConfigured, false);
   await assert.rejects(loadFoundryConfig(), /Foundry is not configured/);
-  assert.equal((await loadFoundryConfig({ requireFoundry: false })).openaiConfigured, true);
+  assert.equal((await loadFoundryConfig({ requireFoundry: false })).openaiConfigured, false);
 });

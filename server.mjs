@@ -32,7 +32,8 @@ const MIME = {
 
 async function serveStatic(res, urlPath) {
   let filePath = normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, "");
-  if (filePath === "/" || filePath === "") filePath = "/index.html";
+  // Windows normalizes a root URL to a backslash.
+  if (filePath === "/" || filePath === "\\" || filePath === "") filePath = "/index.html";
   const full = join(PUBLIC_DIR, filePath);
   if (!full.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);

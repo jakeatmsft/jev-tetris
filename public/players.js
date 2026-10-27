@@ -5,7 +5,7 @@
 import { describePlacement, boardToText, describeHeight, describeHoles, describeSurface } from "./tetris.js";
 import { buildRequest, askJev, pickPlacement } from "./jev.js";
 import { foundry } from "./foundry.js";
-import { DECISION_PRICING, decisionCost } from "./pricing.js";
+import { DECISION_PRICING, OPENAI_DECISION_PRICING, decisionCost, openaiDecisionCost } from "./pricing.js";
 
 export const HAIKU_MODEL = "claude-haiku-4-5";
 export const HAIKU_PRICE = { input: 1 / 1e6, output: 5 / 1e6 }; // $1 / $5 per MTok
@@ -381,8 +381,8 @@ export function createLayaPlayer({ endpoint = LAYA_DEFAULT_ENDPOINT, candidates 
 // `create(key)` takes the API key, or the server address for Laya.
 export const PLAYERS = {
   decision: { name: "Decision-1", short: "Decision-1", badge: "jev", label: "Microsoft Foundry · Entra ID", pricing: DECISION_PRICING, requiresKey: false, create: () => createJevPlayer() },
-  openai: { name: "OpenAI Decisions", short: "OpenAI", badge: "gpt", label: "gpt-6-luna · Decisions API", requiresKey: false, create: () => createOpenaiDecisionPlayer() },
-  gpt: { name: "Foundry GPT", short: "GPT", badge: "gpt", label: "Microsoft Foundry", requiresKey: false, create: () => createGptPlayer() },
+  openai: { name: "OpenAI Decisions", short: "OpenAI", badge: "gpt", label: "gpt-6-luna · Microsoft Foundry", pricing: OPENAI_DECISION_PRICING, requiresKey: false, create: () => createOpenaiDecisionPlayer() },
+  gpt: { name: "Foundry GPT", short: "GPT", badge: "gpt", label: "ResponsesAPI", requiresKey: false, create: () => createGptPlayer() },
   heuristic: { name: "Built-in heuristic", short: "Heuristic", badge: "laya", label: "local · no model calls", requiresKey: false, create: () => createHeuristicPlayer() },
   haiku: { name: "Claude Haiku 4.5", short: "Haiku 4.5", badge: "haiku", label: `${HAIKU_MODEL} · Anthropic`, keyName: "Anthropic", create: (key) => createHaikuPlayer(key) },
   gemini: { name: "Gemini 3.8 Flash", short: "Gemini 3.8", badge: "gemini", label: `${GEMINI_MODEL} · Google`, keyName: "Gemini", create: (key) => createGeminiPlayer(key) },
@@ -392,10 +392,10 @@ export const PLAYERS = {
 export function configureFoundryPlayers(config) {
   PLAYERS.decision.name = config.model || "Decision-1";
   PLAYERS.decision.short = config.model || "Decision-1";
-  PLAYERS.openai.label = `${config.openaiModel || "gpt-6-luna"} · Decisions API`;
+  PLAYERS.openai.label = `${config.openaiModel || "gpt-6-luna"} · Microsoft Foundry`;
   PLAYERS.gpt.name = config.gptModel || "Foundry GPT";
   PLAYERS.gpt.short = config.gptModel || "GPT";
-  PLAYERS.gpt.label = `${config.gptModel || "Not configured"} · Microsoft Foundry`;
+  PLAYERS.gpt.label = `${config.gptModel || "Not configured"} · ResponsesAPI`;
 }
 
 export function buildOpenaiDecisionRequest(gameInfo, placements) {
@@ -430,7 +430,7 @@ export function createOpenaiDecisionPlayer() {
       const inputTokens = response.usage?.input_tokens || 0;
       return {
         chosen, latencyMs, inputTokens, outputTokens: response.usage?.output_tokens || 0,
-        cost: foundry.openaiModel === "gpt-6-luna" ? inputTokens * 0.10 / 1e6 : NaN,
+        cost: openaiDecisionCost(response.usage),
         note: chosen ? `confidence ${(answer.confidence ?? 0).toFixed(2)}` : answer?.type === "refusal" ? "Decision refused" : "No valid placement returned",
       };
     },

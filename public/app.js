@@ -80,10 +80,10 @@ const stats = { calls: 0, latency: 0, tokens: 0, cost: 0, agreements: 0, decisio
 let abort = null;
 let serverKeyConfigured = false;
 // False when the page is served without its proxy (static hosting, file://).
-// Decision-1 mode needs the proxy because api.typesafe.ai rejects browser origins.
+// Decision-1 mode needs the proxy for server-side Foundry authentication.
 let backendAvailable = true;
 const NO_BACKEND_MESSAGE =
-  "This copy of the page has no proxy server, so it cannot reach api.typesafe.ai (the API blocks browser origins). " +
+  "This copy of the page has no proxy server for Foundry authentication. " +
   "Run `npm start` locally or deploy the repo to get Decision-1 mode. The built-in heuristic works here.";
 
 function mode() {

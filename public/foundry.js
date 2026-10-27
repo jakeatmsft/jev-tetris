@@ -1,5 +1,5 @@
 // Only non-secret configuration is sent to the browser.
-export const foundry = { configured: false, model: "Decision-1", gptModel: "", gptConfigured: false };
+export const foundry = { configured: false, model: "Decision-1", gptModel: "", gptConfigured: false, openaiModel: "gpt-6-luna", openaiConfigured: false };
 let configRequest;
 
 export async function loadFoundryConfig({ requireFoundry = true } = {}) {

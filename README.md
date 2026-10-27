@@ -1,11 +1,12 @@
 # Model vs model Tetris
 
 Choose the **Left player** and **Right player** independently on the battle and
-presentation pages. Either side can use Decision-1, OpenAI Decisions (`gpt-6-luna`),
+presentation pages. Either side can use Decision-1, OpenAI Decisions on Foundry (`gpt-6-luna`),
 Foundry GPT, Claude Haiku, Gemini, Laya, or the built-in heuristic. You can also run
 the same model on both sides. Model names load from `.env`; Decision-1 versus OpenAI
 Decisions remains the default when both are configured. Select the pair and click **Go**.
-Foundry and OpenAI credentials stay on the server; optional provider keys use the existing fields.
+Both decision endpoints use Foundry and the server's Microsoft Entra identity;
+optional provider keys use the existing fields.
 
 For example, open **http://localhost:3000/?left=openai&right=gpt** to play OpenAI
 Decisions against your configured Foundry GPT deployment. The same parameters work on
@@ -29,18 +30,19 @@ az login # Only needed when selecting a Foundry player.
 npm start
 ```
 
-Open **http://localhost:3000**. The existing `.env` is loaded automatically. Host
+These commands work in both WSL and PowerShell. Open **http://localhost:3000**;
+the legacy `/battle.html` URL also opens the home page.
+The existing `.env` is loaded automatically. Host
 process variables override file values. Restart the server after changing `.env`.
 
 | Setting | Purpose |
 | --- | --- |
-| `AZURE_OPENAI_BASE_URL` | GPT Responses base URL, e.g. `https://RESOURCE.openai.azure.com/openai/v1`. |
-| `AZURE_AI_PROJECT_ENDPOINT` | Existing Foundry project URL; its resource origin is used for Decision-1. |
-| `AZURE_AI_RESOURCE_ENDPOINT` | Optional explicit Decision resource URL; takes precedence over the project URL. |
+| `AZURE_OPENAI_BASE_URL` | Foundry base URL for OpenAI Decisions and GPT Responses, e.g. `https://RESOURCE.openai.azure.com/openai/v1`. |
+| `AZURE_AI_PROJECT_ENDPOINT` | Existing Foundry project URL; its origin is a fallback when no Decision resource URL is set. |
+| `AZURE_AI_RESOURCE_ENDPOINT` | Recommended Decision-1 resource URL from the account's `properties.endpoint`, e.g. `https://RESOURCE.cognitiveservices.azure.com`; takes precedence over the project URL. |
 | `AZURE_DECISION_DEPLOYMENT` | Decision deployment name; defaults to `Decision-1`. |
 | `AZURE_GPT_DEPLOYMENT` | Optional Foundry GPT Responses opponent deployment name. |
-| `OPENAI_API_KEY` | Server-side key for the OpenAI Decisions opponent. |
-| `OPENAI_DECISION_MODEL` | Defaults to `gpt-6-luna`, the model currently supported by OpenAI Decisions. |
+| `AZURE_OPENAI_DECISION_DEPLOYMENT` | Foundry deployment name for OpenAI Decisions; defaults to `gpt-6-luna`. Must deploy the `gpt-6-luna` model. |
 | `AZURE_TOKEN_SCOPE` | Defaults to `https://cognitiveservices.azure.com/.default`. |
 | `AZURE_DECISION_ENDPOINT` | Optional complete Decision API URL override, including any required query parameters. |
 | `GPT_REASONING_EFFORT` | Defaults to `none`; use an effort supported by your GPT deployment. |
@@ -48,8 +50,8 @@ process variables override file values. Restart the server after changing `.env`
 | `PORT` | Defaults to `3000`. |
 
 The server uses `DefaultAzureCredential` and refreshed Entra bearer tokens, with
-the OpenAI JavaScript client for Decision API requests and GPT Responses requests.
-`OPENAI_API_KEY` is used only for the separate OpenAI Decisions opponent. For a Foundry service principal, set `AZURE_TENANT_ID`,
+one shared OpenAI JavaScript client for both decision endpoints and GPT Responses.
+No OpenAI API key is required or used. For a Foundry service principal, set `AZURE_TENANT_ID`,
 `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET`. On Azure, a managed identity can supply
 the credentials instead. Keep secrets in the ignored `.env`, never in `public/`.
 
@@ -57,16 +59,26 @@ Microsoft's [Decision-1 documentation](https://learn.microsoft.com/en-us/azure/f
 specifies `/providers/microsoft/v1/systemone` on the Foundry resource. This app uses
 that route with `{model, state, questions}`. `AZURE_DECISION_ENDPOINT` can override
 the complete URL for a compatible gateway.
+Set `AZURE_AI_RESOURCE_ENDPOINT` to the account endpoint returned by
+`az cognitiveservices account show --name RESOURCE --resource-group GROUP --query properties.endpoint --output tsv`.
+Using the project's `services.ai.azure.com` host for Decision-1 can produce
+"Unable to get resource information" errors or timeouts; the account's
+`cognitiveservices.azure.com` endpoint resolves that routing issue.
 
-[OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) uses
-`POST https://api.openai.com/v1/decisions` via `client.decisions.create()`. Its
+[Azure OpenAI Decisions](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/decisions?tabs=javascript) uses
+`POST https://RESOURCE.openai.azure.com/openai/v1/decisions` via `client.decisions.create()`.
+The server pins `model` to `AZURE_OPENAI_DECISION_DEPLOYMENT`, the deployment name from
+Foundry. Its
 `input`, named `questions` array and `choices` array are built from the same board
 and placements used by Decision-1. Refusals and invalid choices are reported as
-invalid decisions. Its API key stays on the server.
+invalid decisions. Requests use the same refreshed Entra token as Decision-1.
+Existing `OPENAI_API_KEY` and `OPENAI_DECISION_MODEL` settings are ignored; use the
+Azure endpoint and deployment settings above.
 
 The optional Foundry GPT opponent uses `/openai/v1/responses` with a forced, strict
-`place_piece` function call. If no OpenAI key is configured, the landing page selects
-Foundry GPT when available, otherwise the local heuristic.
+`place_piece` function call. When Foundry is configured, the default matchup is
+Decision-1 versus OpenAI Decisions on Foundry. Without Foundry configuration, the
+landing page selects the local heuristic.
 
 The **Check connection** action verifies Entra sign-in; deployment access is verified
 when a model request runs. A 401/403 means sign-in or role access needs attention;
@@ -76,10 +88,20 @@ when a model request runs. A 401/403 means sign-in or role access needs attentio
 The [published rate](https://commandline.microsoft.com/microsoft-decision-1-model-foundry/)
 appears beneath Decision-1's model name on either side. Battle, presentation, human-play,
 and solo costs use the reported input-token usage at that base rate. Small nonzero costs
-remain visible instead of rounding to zero. Missing usage displays `–`. Foundry GPT
-costs still display `–` because its deployment rate is not configured.
-OpenAI Decisions uses the documented $0.10 per million input tokens for `gpt-6-luna`
-without regional or long-context premiums; its displayed cost is an estimate.
+remain visible instead of rounding to zero. Missing usage displays `–`.
+
+**Foundry Decisions pricing (USD per 1M tokens):**
+
+| Decision API supported model | Input | Output | Cached input | 30-minute cached write |
+| --- | --- | --- | --- | --- |
+| GPT-6 Luna | $0.10 | N/A | $0.01 | $0.125 |
+
+These rates appear beneath OpenAI Decisions' model name on either side. Its cost
+estimates use reported input usage, charging cached reads and 30-minute cache writes
+at their respective rates without counting them again as regular input. When cache
+details are absent, all reported input is estimated at the regular input rate.
+Foundry GPT costs still display `–` because its Azure deployment rates are not
+configured. Token usage and latency are still reported for all models.
 
 The human-versus-model and solo pages use Decision-1 with the same server credentials.
 The presentation page uses the two selected models throughout the series, including
@@ -283,7 +305,7 @@ answer mapping, the Haiku tool schema and reply parser).
 ```
 server.mjs            local static server + proxies
 lib/foundry.mjs       Entra authentication and Foundry Decision/GPT proxies
-lib/openai-decisions.mjs  OpenAI Decisions proxy with a server-side API key
+lib/openai-decisions.mjs  Azure OpenAI Decisions proxy using shared Foundry authentication
 lib/config.mjs        public configuration allowlist
 lib/typesafe.mjs      shared HTTP helpers and legacy TypeSafe utilities
 lib/anthropic.mjs     Anthropic Messages API proxy for the battle

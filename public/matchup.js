@@ -1,6 +1,7 @@
 // Shared model selection for the battle and presentation pages.
 import { PLAYERS, configureFoundryPlayers, checkLayaServer } from "./players.js";
 import { foundry, ensureFoundryConnection } from "./foundry.js";
+import { formatPricing } from "./pricing.js";
 
 export function playerAvailable(id, config) {
   if (!Object.hasOwn(PLAYERS, id)) return false;
@@ -35,8 +36,8 @@ export async function prepareMatchup(ids, credentials = {}, {
     }
     return player;
   });
-  // OpenAI/local-only matches do not require an Azure deployment or Entra sign-in.
-  if (ids.some((id) => id === "decision" || id === "gpt")) await connect();
+  // All Foundry models share the server's Entra authentication check.
+  if (ids.some((id) => ["decision", "openai", "gpt"].includes(id))) await connect();
   const layaInfo = ids.includes("laya") ? await checkLaya(credentials.laya.trim()) : null;
   return players.map((player, index) => ({
     ...player.create(credentials[ids[index]]?.trim() || ""),
@@ -68,7 +69,7 @@ export function createMatchupControls({ onChange = () => {}, titleSuffix = "" } 
       $(`model${side}`).textContent = player.label;
       const price = $(`price${side}`);
       price.classList.toggle("hidden", !player.pricing);
-      price.textContent = player.pricing ? `$${player.pricing.inputPerMillion} / 1M input tokens · Output tokens free` : "";
+      price.textContent = player.pricing ? formatPricing(player.pricing) : "";
       if (player.pricing) price.href = player.pricing.source;
       else price.removeAttribute("href");
       if ($(`name${side}`)) $(`name${side}`).textContent = player.short;
@@ -83,9 +84,9 @@ export function createMatchupControls({ onChange = () => {}, titleSuffix = "" } 
     $("layaNote")?.classList.toggle("hidden", !selected.includes("laya"));
     $("remember").closest("label").classList.toggle("hidden", !selected.some((id) => ["haiku", "gemini", "laya"].includes(id)));
     for (const el of document.querySelectorAll("[data-connection-status]")) {
-      el.textContent = selected.some((id) => id === "decision" || id === "gpt")
+      el.textContent = selected.some((id) => ["decision", "openai", "gpt"].includes(id))
         ? "Selected Foundry models use the server’s Microsoft Entra ID sign-in."
-        : selected.includes("openai") ? "OpenAI Decisions uses the key configured on the server." : "No Foundry connection required for this match.";
+        : "No Foundry connection required for this match.";
       el.classList.remove("connection-error");
     }
   }
@@ -94,7 +95,7 @@ export function createMatchupControls({ onChange = () => {}, titleSuffix = "" } 
     configureFoundryPlayers(config);
     const selection = resolveMatchup(config, params);
     const labels = {
-      decision: "Foundry", openai: config.openaiModel || "gpt-6-luna", gpt: "Foundry GPT",
+      decision: "Foundry", openai: `${config.openaiModel || "gpt-6-luna"} · Foundry`, gpt: "ResponsesAPI",
       heuristic: "local", haiku: "Anthropic", gemini: "Google", laya: "local",
     };
     selectors.forEach((select, index) => {
